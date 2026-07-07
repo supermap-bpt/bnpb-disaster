@@ -124,8 +124,8 @@ def test_build_odata_filter_builds_sentinel3_branch_with_no_cloud_cover():
     )
     filter_str = build_odata_filter(query)
     assert "SENTINEL-3" in filter_str
-    assert "SL_2_LST" in filter_str
-    assert "SL_2_WST" in filter_str
+    assert "SL_2_LST___" in filter_str
+    assert "SL_2_WST___" in filter_str
     assert "instrumentShortName" in filter_str and "SLSTR" in filter_str
     assert "cloudCover" not in filter_str
     assert "SENTINEL-1" not in filter_str
@@ -143,7 +143,7 @@ def test_build_odata_filter_ors_sentinel1_and_sentinel3_branches():
     assert "SENTINEL-1" in filter_str
     assert "SENTINEL-3" in filter_str
     assert "GRD" in filter_str
-    assert "SL_2_LST" in filter_str
+    assert "SL_2_LST___" in filter_str
     assert filter_str.count(" or ") >= 1
 
 
@@ -298,7 +298,7 @@ async def test_search_products_parses_sentinel3_slstr_lst(settings):
                             "98.0 6.0, 95.0 6.0, 95.0 4.0))'"
                         ),
                         "Attributes": [
-                            {"Name": "productType", "Value": "SL_2_LST"},
+                            {"Name": "productType", "Value": "SL_2_LST___"},
                         ],
                     },
                 ],

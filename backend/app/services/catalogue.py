@@ -23,8 +23,8 @@ _S2_PRODUCT_TYPE_FILTER = {
     ProductType.S2_L2A: "S2MSI2A",
 }
 _S3_PRODUCT_TYPE_FILTER = {
-    ProductType.S3_SLSTR_L2_LST: "SL_2_LST",
-    ProductType.S3_SLSTR_L2_WST: "SL_2_WST",
+    ProductType.S3_SLSTR_L2_LST: "SL_2_LST___",
+    ProductType.S3_SLSTR_L2_WST: "SL_2_WST___",
 }
 
 # CDSE silently caps results to a small default page (20) when $top is
