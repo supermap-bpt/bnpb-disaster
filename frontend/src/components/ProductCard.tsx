@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useGIS, type SearchResultItem } from "../context/GISContext";
 import { getDownloadUrl, getPreviewImageUrl } from "../api/client";
-import { getInstrument, getMission, isSentinel2 } from "@/lib/satellite";
+import { getInstrument, getMission, isSentinel2, isSentinel3 } from "@/lib/satellite";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,8 @@ const PRODUCT_TYPE_LABEL: Record<string, string> = {
   SENTINEL_1_GRD: "Level 1-GRD",
   SENTINEL_2_L1C: "L1C",
   SENTINEL_2_L2A: "L2A",
+  SENTINEL_3_SLSTR_L2_LST: "Level-2 LST",
+  SENTINEL_3_SLSTR_L2_WST: "Level-2 WST",
 };
 
 // Process API (and therefore a renderable thumbnail) only supports the GRD
@@ -27,6 +29,8 @@ const THUMBNAIL_SUPPORTED: Record<string, boolean> = {
   SENTINEL_1_SLC: false,
   SENTINEL_2_L2A: true,
   SENTINEL_2_L1C: false,
+  SENTINEL_3_SLSTR_L2_LST: false,
+  SENTINEL_3_SLSTR_L2_WST: false,
 };
 
 function ProductCard({ item }: { item: SearchResultItem }) {
@@ -71,7 +75,7 @@ function ProductCard({ item }: { item: SearchResultItem }) {
           <dd>{getInstrument(item.productType)}</dd>
           <dt>{t("type")}</dt>
           <dd>{PRODUCT_TYPE_LABEL[item.productType] ?? item.productType}</dd>
-          {isSentinel2(item.productType) ? (
+          {isSentinel3(item.productType) ? null : isSentinel2(item.productType) ? (
             <>
               <dt>{t("cloudCover")}</dt>
               <dd>{item.cloudCoverPercentage != null ? `${Math.round(item.cloudCoverPercentage)}%` : "N/A"}</dd>
