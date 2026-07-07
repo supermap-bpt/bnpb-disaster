@@ -22,6 +22,9 @@ _S2_PRODUCT_TYPE_FILTER = {
     ProductType.S2_L1C: "S2MSI1C",
     ProductType.S2_L2A: "S2MSI2A",
 }
+# Unlike S1/S2's short markers, CDSE's OData productType filter for Sentinel-3
+# requires the exact fixed-width padded value (11 chars, 3 trailing '_'). Removing
+# the padding breaks all S3 searches silently (returns 0 results, not an error).
 _S3_PRODUCT_TYPE_FILTER = {
     ProductType.S3_SLSTR_L2_LST: "SL_2_LST___",
     ProductType.S3_SLSTR_L2_WST: "SL_2_WST___",
