@@ -22,6 +22,10 @@ _S2_PRODUCT_TYPE_FILTER = {
     ProductType.S2_L1C: "S2MSI1C",
     ProductType.S2_L2A: "S2MSI2A",
 }
+_S3_PRODUCT_TYPE_FILTER = {
+    ProductType.S3_SLSTR_L2_LST: "SL_2_LST",
+    ProductType.S3_SLSTR_L2_WST: "SL_2_WST",
+}
 
 # CDSE silently caps results to a small default page (20) when $top is
 # omitted. 50 matches Copernicus Browser's observed page size.
@@ -33,7 +37,7 @@ def _product_type_from_raw(raw: str) -> ProductType:
     # code (e.g. "IW_GRDH_1S", "IW_SLC__1S", "S2MSI1C", "S2MSI2A"), not the
     # short filter marker - the short form only works as a filter value, not
     # as the value returned in the attribute itself, so matching is by substring.
-    for enum, marker in {**_S1_PRODUCT_TYPE_FILTER, **_S2_PRODUCT_TYPE_FILTER}.items():
+    for enum, marker in {**_S1_PRODUCT_TYPE_FILTER, **_S2_PRODUCT_TYPE_FILTER, **_S3_PRODUCT_TYPE_FILTER}.items():
         if marker in raw:
             return enum
     raise ValueError(f"Unrecognized productType attribute value: {raw!r}")
@@ -58,6 +62,10 @@ _S1_INSTRUMENT_CLAUSE = (
 _S2_INSTRUMENT_CLAUSE = (
     "Attributes/OData.CSC.StringAttribute/any("
     "att:att/Name eq 'instrumentShortName' and att/OData.CSC.StringAttribute/Value eq 'MSI')"
+)
+_S3_INSTRUMENT_CLAUSE = (
+    "Attributes/OData.CSC.StringAttribute/any("
+    "att:att/Name eq 'instrumentShortName' and att/OData.CSC.StringAttribute/Value eq 'SLSTR')"
 )
 
 
@@ -87,6 +95,7 @@ def build_odata_filter(query: SearchQuery) -> str:
 
     s1_types = [pt for pt in query.productType if pt in _S1_PRODUCT_TYPE_FILTER]
     s2_types = [pt for pt in query.productType if pt in _S2_PRODUCT_TYPE_FILTER]
+    s3_types = [pt for pt in query.productType if pt in _S3_PRODUCT_TYPE_FILTER]
 
     branches: list[str] = []
     if s1_types:
@@ -111,6 +120,15 @@ def build_odata_filter(query: SearchQuery) -> str:
             f"and {_S2_INSTRUMENT_CLAUSE} "
             f"and ({_type_clause(raw_values, intersects_clause)}) "
             f"and {cloud_clause})"
+        )
+    if s3_types:
+        raw_values = [_S3_PRODUCT_TYPE_FILTER[pt] for pt in s3_types]
+        branches.append(
+            "(Collection/Name eq 'SENTINEL-3' "
+            f"and {date_clause} "
+            "and Online eq true "
+            f"and {_S3_INSTRUMENT_CLAUSE} "
+            f"and ({_type_clause(raw_values, intersects_clause)}))"
         )
 
     return " or ".join(branches)
