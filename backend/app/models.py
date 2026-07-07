@@ -9,6 +9,8 @@ class ProductType(str, Enum):
     GRD = "SENTINEL_1_GRD"
     S2_L1C = "SENTINEL_2_L1C"
     S2_L2A = "SENTINEL_2_L2A"
+    S3_SLSTR_L2_LST = "SENTINEL_3_SLSTR_L2_LST"
+    S3_SLSTR_L2_WST = "SENTINEL_3_SLSTR_L2_WST"
 
 
 class SearchQuery(BaseModel):
