@@ -1,0 +1,33 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Python
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# Storage (saved-satellite metadata/thumbnails written at runtime)
+backend/storage/
+
+# Editor/OS
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Claude Code local tool state
+.claude/
+
+# Subagent-driven-development scratch (progress ledger, review packages)
+.superpowers/
+
+# Docs Superpowers
+docs/superpowers/

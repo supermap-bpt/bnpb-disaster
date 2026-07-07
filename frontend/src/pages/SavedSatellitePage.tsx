@@ -1,0 +1,337 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  deleteSavedSatellite,
+  fetchSavedSatelliteDetail,
+  fetchSavedSatellites,
+  getSavedSatelliteDownloadFileUrl,
+  getSavedSatelliteThumbnailUrl,
+  retryFileDownload,
+  type SavedSatelliteDetail,
+  type SavedSatelliteSummary,
+} from "@/api/client";
+import { Card, CardContent } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/FilterPanel";
+import SavedProductInfoModal from "@/components/SavedProductInfoModal";
+import SavedSatelliteMap from "@/components/SavedSatelliteMap";
+import { useLanguage } from "@/context/LanguageContext";
+import type { TranslationKey } from "@/i18n/translations";
+import { Download, Info, MapPin, MapPinOff, RefreshCw, Trash2 } from "lucide-react";
+
+const PAGE_SIZE = 10;
+const NAME_DEBOUNCE_MS = 300;
+
+const FILE_STATUS_LABEL_KEY: Record<string, TranslationKey> = {
+  downloading: "fileStatusDownloading",
+  completed: "fileStatusCompleted",
+  failed: "fileStatusFailed",
+};
+
+const FILE_STATUS_BADGE_CLASS: Record<string, string> = {
+  downloading: "bg-muted text-muted-foreground",
+  completed: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
+  failed: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
+};
+
+function SavedSatellitePage() {
+  const { t } = useLanguage();
+  const [items, setItems] = useState<SavedSatelliteSummary[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [nameInput, setNameInput] = useState("");
+  const [name, setName] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateUntil, setDateUntil] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedDetail, setSelectedDetail] = useState<SavedSatelliteDetail | null>(null);
+  const [infoModalItem, setInfoModalItem] = useState<SavedSatelliteDetail | null>(null);
+  const detailCache = useRef(new Map<string, SavedSatelliteDetail>());
+
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total]);
+
+  const load = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const { items: fetched, total: fetchedTotal } = await fetchSavedSatellites({
+        name: name || undefined,
+        dateFrom: dateFrom || undefined,
+        dateUntil: dateUntil || undefined,
+        page,
+        pageSize: PAGE_SIZE,
+      });
+      setItems(fetched);
+      setTotal(fetchedTotal);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("loadingSavedSatellites"));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, [name, dateFrom, dateUntil, page]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setName(nameInput);
+      setPage(1);
+    }, NAME_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [nameInput]);
+
+  const handleDateFromChange = (value: string) => {
+    setDateFrom(value);
+    setPage(1);
+  };
+
+  const handleDateUntilChange = (value: string) => {
+    setDateUntil(value);
+    setPage(1);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm(t("deleteSatelliteConfirm"))) return;
+    try {
+      await deleteSavedSatellite(id);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("satelliteDeleteFailed"));
+    }
+  };
+
+  const handleRetry = async (id: string) => {
+    try {
+      await retryFileDownload(id);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("fileStatusFailed"));
+    }
+  };
+
+  const getDetail = async (id: string): Promise<SavedSatelliteDetail | null> => {
+    const cached = detailCache.current.get(id);
+    if (cached) return cached;
+    try {
+      const detail = await fetchSavedSatelliteDetail(id);
+      detailCache.current.set(id, detail);
+      return detail;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("loadingSavedSatellites"));
+      return null;
+    }
+  };
+
+  const handleViewOnMap = async (id: string) => {
+    if (selectedDetail?.id === id) {
+      setSelectedDetail(null);
+      return;
+    }
+    const detail = await getDetail(id);
+    if (detail) setSelectedDetail(detail);
+  };
+
+  const handleProductInfo = async (id: string) => {
+    const detail = await getDetail(id);
+    if (detail) setInfoModalItem(detail);
+  };
+
+  return (
+    <main className="flex flex-1 gap-3 overflow-hidden p-3">
+      <div className="flex w-1/2 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
+        <div className="flex flex-col gap-3 border-b p-4">
+          <h1 className="text-xl font-semibold">{t("savedSatellitesTitle")}</h1>
+          <p className="text-sm text-muted-foreground">
+            {t("savedSatellitesSubtitle")}
+          </p>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <div className="flex flex-col gap-1 sm:max-w-xs">
+              <Label htmlFor="search-satellite">
+                {t("searchSatelliteNameSearch")}
+              </Label>
+
+              <Input
+                id="search-satellite"
+                placeholder={t("searchSatelliteName")}
+                value={nameInput}
+                onChange={(event) => setNameInput(event.target.value)}
+              />
+            </div>
+            <DateField
+              id="saved-satellite-date-from"
+              label={t("dateFrom")}
+              placeholder={t("dateFrom")}
+              value={dateFrom}
+              onChange={handleDateFromChange}
+            />
+            <DateField
+              id="saved-satellite-date-until"
+              label={t("dateUntil")}
+              placeholder={t("dateUntil")}
+              value={dateUntil}
+              onChange={handleDateUntilChange}
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
+          {isLoading && <p className="text-sm text-muted-foreground">{t("loadingSavedSatellites")}</p>}
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          {!isLoading && items.length === 0 && (
+            <p className="text-sm text-muted-foreground">{t("noSavedSatellites")}</p>
+          )}
+
+          <div className="flex flex-col gap-3">
+            {items.map((item) => (
+              <Card key={item.id} className="flex gap-2 rounded-lg p-3 shadow-sm transition-colors hover:border-primary/40">
+                {item.preview && (
+                  <img
+                    src={getSavedSatelliteThumbnailUrl(item.preview)}
+                    alt={item.satelliteName}
+                    className="h-16 w-16 shrink-0 rounded-md object-cover"
+                  />
+                )}
+                <CardContent className="min-w-0 flex-1 p-0">
+                  <h3 className="break-all text-sm font-semibold">{item.satelliteName}</h3>
+                  {item.fileStatus && (
+                    <span
+                      className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] ${FILE_STATUS_BADGE_CLASS[item.fileStatus] ?? ""
+                        }`}
+                    >
+                      {t(FILE_STATUS_LABEL_KEY[item.fileStatus] ?? "fileStatusDownloading")}
+                    </span>
+                  )}
+                  <dl className="mt-1 grid grid-cols-2 gap-x-1 text-[11px] text-muted-foreground">
+                    <dt>{t("mission")}</dt>
+                    <dd>{item.mission}</dd>
+                    <dt>{t("polarisation")}</dt>
+                    <dd>{item.polarisation}</dd>
+                    <dt>{t("sensingTime")}</dt>
+                    <dd>{item.sensingTime}</dd>
+                    <dt>{t("size")}</dt>
+                    <dd>{item.size}</dd>
+                  </dl>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={item.id === selectedDetail?.id ? "secondary" : "default"}
+                      onClick={() => handleViewOnMap(item.id)}
+                      className="h-7 flex-1 px-2 text-[11px]"
+                    >
+                      {item.id === selectedDetail?.id ? (
+                        <>
+                          <MapPinOff className="h-3 w-3" /> {t("removeFromMap")}
+                        </>
+                      ) : (
+                        <>
+                          <MapPin className="h-3 w-3" /> {t("viewOnMap")}
+                        </>
+                      )}
+                    </Button>
+                    {item.fileStatus === "completed" ? (
+                      <Button asChild type="button" size="sm" variant="outline" className="h-7 flex-1 px-2 text-[11px]">
+                        <a href={getSavedSatelliteDownloadFileUrl(item.id)} download>
+                          <Download className="h-3 w-3" /> {t("download")}
+                        </a>
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled
+                        title={t("downloadNotReady")}
+                        className="h-7 flex-1 px-2 text-[11px]"
+                      >
+                        <Download className="h-3 w-3" /> {t("download")}
+                      </Button>
+                    )}
+                    {item.fileStatus === "failed" && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleRetry(item.id)}
+                        className="h-7 px-2 text-[11px]"
+                      >
+                        <RefreshCw className="h-3 w-3" /> {t("retryFileDownload")}
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="outline"
+                      aria-label={t("delete")}
+                      onClick={() => handleDelete(item.id)}
+                      className="h-7 w-7 shrink-0"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="outline"
+                      aria-label={t("productInfo")}
+                      onClick={() => handleProductInfo(item.id)}
+                      className="h-7 w-7 shrink-0"
+                    >
+                      <Info className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+
+        {total > 0 && (
+          <div className="flex items-center justify-center gap-3 border-t p-3">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={page <= 1}
+              onClick={() => setPage((current) => current - 1)}
+            >
+              {t("paginationPrev")}
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              {page} / {totalPages}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={page >= totalPages}
+              onClick={() => setPage((current) => current + 1)}
+            >
+              {t("paginationNext")}
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <div className="w-1/2 overflow-hidden rounded-xl border">
+        <SavedSatelliteMap selected={selectedDetail} />
+      </div>
+
+      {infoModalItem && (
+        <SavedProductInfoModal
+          item={infoModalItem}
+          open={infoModalItem !== null}
+          onOpenChange={(open) => {
+            if (!open) setInfoModalItem(null);
+          }}
+        />
+      )}
+    </main>
+  );
+}
+
+export default SavedSatellitePage;

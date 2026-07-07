@@ -1,0 +1,53 @@
+import uuid
+from datetime import datetime
+
+from sqlalchemy import DateTime, Integer, String
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.sql import func
+
+from app.db.session import Base
+
+
+class SavedSatellite(Base):
+    __tablename__ = "saved_satellites"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    satellite_name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    product_id: Mapped[str] = mapped_column(String, nullable=False)
+    directory_path: Mapped[str] = mapped_column(String, nullable=False)
+    summary: Mapped[list[dict]] = mapped_column(JSONB, nullable=False)
+    product: Mapped[list[dict]] = mapped_column(JSONB, nullable=False, default=list)
+    instrument: Mapped[list[dict]] = mapped_column(JSONB, nullable=False, default=list)
+    platform: Mapped[list[dict]] = mapped_column(JSONB, nullable=False, default=list)
+    other: Mapped[list[dict]] = mapped_column(JSONB, nullable=False, default=list)
+    download_single_file: Mapped[str] = mapped_column(String, nullable=False)
+    preview: Mapped[str | None] = mapped_column(String, nullable=True)
+    footprint: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    mission: Mapped[str] = mapped_column(String, nullable=False)
+    instrument_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    polarisation: Mapped[str] = mapped_column(String, nullable=False)
+    sensing_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    size: Mapped[str] = mapped_column(String, nullable=False)
+    product_file_status: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    product_file_path: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class ActivityLog(Base):
+    __tablename__ = "activity_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    action: Mapped[str] = mapped_column(String, nullable=False)
+    category: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="in_progress")
+    description: Mapped[str] = mapped_column(String, nullable=False)
+    progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
