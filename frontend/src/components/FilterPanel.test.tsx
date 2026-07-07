@@ -222,6 +222,56 @@ describe("FilterPanel", () => {
     expect(screen.getByLabelText(/level 1-slc/i)).not.toBeChecked();
   });
 
+  it("checking Sentinel-3 checks both SLSTR leaves without touching Sentinel-1 or Sentinel-2", async () => {
+    render(
+      <Providers>
+        <WithPlace ring={SAMPLE_PLACE}>
+          <FilterPanel />
+        </WithPlace>
+      </Providers>
+    );
+
+    fireEvent.click(screen.getByLabelText(/^sentinel-3$/i));
+    expect(screen.getByLabelText(/level-2 lst/i)).toBeChecked();
+    expect(screen.getByLabelText(/level-2 wst/i)).toBeChecked();
+    // Default S1 state (GRD checked, SLC not) and S2 (both unchecked) must be untouched.
+    expect(screen.getByLabelText(/level 1-grd/i)).toBeChecked();
+    expect(screen.getByLabelText(/level 1-slc/i)).not.toBeChecked();
+    expect(screen.getByLabelText(/^l1c$/i)).not.toBeChecked();
+    expect(screen.getByLabelText(/^l2a$/i)).not.toBeChecked();
+  });
+
+  it("submits Sentinel-3 product types when their checkboxes are checked", async () => {
+    vi.mocked(fetchSearch).mockResolvedValue({ results: [], total: 0 });
+
+    render(
+      <Providers>
+        <WithPlace ring={SAMPLE_PLACE}>
+          <WithAddressQuery query="Somewhere, Indonesia">
+            <FilterPanel />
+          </WithAddressQuery>
+        </WithPlace>
+      </Providers>
+    );
+
+    fireEvent.click(screen.getByLabelText(/level-2 lst/i));
+    pickDate(/^dari$/i, 2026, 0, 1);
+    pickDate(/^sampai$/i, 2026, 1, 1);
+    fireEvent.click(screen.getByRole("button", { name: /^cari$/i }));
+
+    await waitFor(() => expect(fetchSearch).toHaveBeenCalled());
+    expect(fetchSearch).toHaveBeenCalledWith(
+      {
+        productType: ["SENTINEL_1_GRD", "SENTINEL_3_SLSTR_L2_LST"],
+        cloudCoverMax: 100,
+        dateFrom: "2026-01-01",
+        dateUntil: "2026-02-01",
+      },
+      SAMPLE_PLACE,
+      0
+    );
+  });
+
   it("cloud cover slider is disabled until a Sentinel-2 leaf is checked", async () => {
     render(
       <Providers>

@@ -38,6 +38,16 @@ const SATELLITE_GROUPS = [
       { value: "SENTINEL_2_L2A", label: "L2A" },
     ],
   },
+  {
+    id: "sentinel-3",
+    label: "Sentinel-3",
+    sensorId: "slstr",
+    sensorLabel: "SLSTR",
+    leaves: [
+      { value: "SENTINEL_3_SLSTR_L2_LST", label: "Level-2 LST" },
+      { value: "SENTINEL_3_SLSTR_L2_WST", label: "Level-2 WST" },
+    ],
+  },
 ] as const;
 
 const ALL_LEAF_VALUES = SATELLITE_GROUPS.flatMap((group) => group.leaves.map((leaf) => leaf.value));
