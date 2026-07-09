@@ -38,7 +38,32 @@ function SelectedFootprintSync({ selected }: { selected: SavedSatelliteDetail | 
   );
 }
 
-function SavedSatelliteMap({ selected }: { selected: SavedSatelliteDetail | null }) {
+export interface LandslideOverlay {
+  url: string;
+  // Leaflet bounds [[south, west], [north, east]]
+  bounds: [[number, number], [number, number]];
+}
+
+function LandslideOverlaySync({ overlay }: { overlay: LandslideOverlay | null }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (overlay === null) return;
+    map.fitBounds(overlay.bounds);
+  }, [overlay, map]);
+
+  if (overlay === null) return null;
+
+  return <ImageOverlay url={overlay.url} bounds={overlay.bounds} opacity={1} zIndex={500} />;
+}
+
+function SavedSatelliteMap({
+  selected,
+  overlay = null,
+}: {
+  selected: SavedSatelliteDetail | null;
+  overlay?: LandslideOverlay | null;
+}) {
   return (
     <MapContainer center={[-2.5, 118]} zoom={5} zoomControl={false} className="h-full w-full">
       <RemoveLeafletPrefix />
@@ -48,6 +73,7 @@ function SavedSatelliteMap({ selected }: { selected: SavedSatelliteDetail | null
       />
       <ZoomControl position="bottomright" />
       <SelectedFootprintSync selected={selected} />
+      <LandslideOverlaySync overlay={overlay} />
     </MapContainer>
   );
 }

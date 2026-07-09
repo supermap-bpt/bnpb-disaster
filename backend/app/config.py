@@ -30,6 +30,15 @@ class Settings(BaseSettings):
     # plain comma-separated string (CORS_ORIGINS=http://localhost:5173,...).
     cors_origins_raw: str = Field(default="http://localhost:5173", validation_alias="CORS_ORIGINS")
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/sar_browser"
+    # ESA SNAP Graph Processing Tool. Default assumes `gpt` is on PATH; override
+    # via SNAP_GPT_PATH env var to an absolute path (e.g. /opt/snap/bin/gpt).
+    snap_gpt_path: str = Field(default="gpt", validation_alias="SNAP_GPT_PATH")
+    # Backscatter-drop cutoff (dB) for the landslide binary mask, per the reference paper.
+    landslide_threshold_db: float = -2.0
+    # Pixels whose pre- OR post-event Sigma0_VV is below this (dB) are treated as
+    # water / radar shadow / smooth surfaces and excluded from the landslide mask.
+    # Land/vegetation VV is typically > -15 dB; open water is < -20 dB.
+    landslide_water_threshold_db: float = -17.0
 
     @property
     def cors_origins(self) -> list[str]:
