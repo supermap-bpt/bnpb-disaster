@@ -145,6 +145,7 @@ function FilterPanel() {
   const {
     placeRing,
     addressQuery,
+    setPlaceRing,
     setSearchResults,
     setLastSearchFilter,
     isSearching,
@@ -180,6 +181,7 @@ function FilterPanel() {
     setIsSearching(true);
     try {
       const { results, total } = await fetchSearch(values, aoiRing, 0);
+      setPlaceRing(aoiRing);
       setLastSearchFilter(values);
       setSearchResults(results, total);
     } catch (err) {
