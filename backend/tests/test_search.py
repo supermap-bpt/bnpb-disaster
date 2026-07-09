@@ -1,3 +1,5 @@
+import urllib.parse
+
 import httpx
 import pytest
 import respx
@@ -5,7 +7,7 @@ import respx
 from app.auth import TokenManager
 from app.config import Settings
 from app.models import ProductType, SearchQuery
-from app.services.cache import get_cached_attributes, get_cached_product_size
+from app.services.cache import get_cached_attributes, get_cached_product_size, get_cached_quicklook_asset_id
 from app.services.catalogue import (
     _aoi_to_polygon_wkt,
     build_odata_filter,
@@ -410,6 +412,99 @@ async def test_search_products_returns_parsed_results_with_type_from_attributes(
     # Regression: size must be cached per product so a later Download Product
     # log entry can show it without a second CDSE round-trip.
     assert get_cached_product_size("S1A_IW_GRDH_1SDV_20260126T114301") == "1633MB"
+
+
+@respx.mock
+async def test_search_products_caches_quicklook_asset_id_when_present(settings):
+    respx.post("https://identity.test/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "tok-1", "expires_in": 600})
+    )
+    catalogue_route = respx.get("https://catalogue.test/Products").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "@odata.count": 1,
+                "value": [
+                    {
+                        "Id": "S3A_SL_2_LST____20260610T160122",
+                        "Name": "S3A_SL_2_LST____20260610T160122.SEN3",
+                        "ContentDate": {"Start": "2026-06-10T16:01:22.000000Z"},
+                        "ContentLength": 62914560,
+                        "Footprint": (
+                            "geography'SRID=4326;POLYGON((95.0 4.0, 98.0 4.0, "
+                            "98.0 6.0, 95.0 6.0, 95.0 4.0))'"
+                        ),
+                        "Attributes": [
+                            {"Name": "productType", "Value": "SL_2_LST___"},
+                        ],
+                        "Assets": [
+                            {
+                                "Type": "QUICKLOOK",
+                                "Id": "asset-quicklook-1",
+                                "DownloadLink": "https://catalogue.test/Assets(asset-quicklook-1)/$value",
+                            }
+                        ],
+                    },
+                ],
+            },
+        )
+    )
+    query = SearchQuery(
+        productType=[ProductType.S3_SLSTR_L2_LST],
+        dateFrom="2026-06-01",
+        dateUntil="2026-06-30",
+        aoi="95.0,4.0,98.0,4.0,98.0,6.0,95.0,6.0",
+    )
+    token_manager = TokenManager(settings)
+
+    result = await search_products(query, settings, token_manager)
+
+    assert result.results[0].productType is ProductType.S3_SLSTR_L2_LST
+    assert get_cached_quicklook_asset_id("S3A_SL_2_LST____20260610T160122") == "asset-quicklook-1"
+    request_url = str(catalogue_route.calls.last.request.url)
+    assert "Attributes,Assets" in urllib.parse.unquote(request_url)
+
+
+@respx.mock
+async def test_search_products_leaves_quicklook_asset_id_uncached_when_assets_empty(settings):
+    respx.post("https://identity.test/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "tok-1", "expires_in": 600})
+    )
+    respx.get("https://catalogue.test/Products").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "@odata.count": 1,
+                "value": [
+                    {
+                        "Id": "S3A_SL_2_WST____20260610T150712",
+                        "Name": "S3A_SL_2_WST____20260610T150712.SEN3",
+                        "ContentDate": {"Start": "2026-06-10T15:07:12.000000Z"},
+                        "ContentLength": 62914560,
+                        "Footprint": (
+                            "geography'SRID=4326;POLYGON((95.0 4.0, 98.0 4.0, "
+                            "98.0 6.0, 95.0 6.0, 95.0 4.0))'"
+                        ),
+                        "Attributes": [
+                            {"Name": "productType", "Value": "SL_2_WST___"},
+                        ],
+                        "Assets": [],
+                    },
+                ],
+            },
+        )
+    )
+    query = SearchQuery(
+        productType=[ProductType.S3_SLSTR_L2_WST],
+        dateFrom="2026-06-01",
+        dateUntil="2026-06-30",
+        aoi="95.0,4.0,98.0,4.0,98.0,6.0,95.0,6.0",
+    )
+    token_manager = TokenManager(settings)
+
+    await search_products(query, settings, token_manager)
+
+    assert get_cached_quicklook_asset_id("S3A_SL_2_WST____20260610T150712") is None
 
 
 @respx.mock

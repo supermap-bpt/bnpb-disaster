@@ -11,6 +11,7 @@ from app.services.cache import (
     cache_product_name,
     cache_product_size,
     cache_product_type,
+    cache_quicklook_asset_id,
     cache_sensing_time,
 )
 
@@ -178,7 +179,7 @@ async def search_products(
 
     params = {
         "$filter": odata_filter,
-        "$expand": "Attributes",
+        "$expand": "Attributes,Assets",
         "$top": SEARCH_PAGE_SIZE,
         "$skip": query.skip,
         "$count": "true",
@@ -265,6 +266,13 @@ async def search_products(
         cache_sensing_time(item.id, item.sensingTime)
         cache_product_type(item.id, item.productType)
         cache_attributes(item.id, attributes)
+
+        quicklook_asset = next(
+            (asset for asset in entry.get("Assets", []) if asset.get("Type") == "QUICKLOOK"),
+            None,
+        )
+        if quicklook_asset is not None:
+            cache_quicklook_asset_id(item.id, quicklook_asset["Id"])
 
         items.append(item)
 
