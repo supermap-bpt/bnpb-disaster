@@ -47,6 +47,16 @@ const SENTINEL2_ITEM: SearchResultItem = {
   footprint: { type: "Polygon", coordinates: [] },
 };
 
+const SENTINEL3_ITEM: SearchResultItem = {
+  id: "p5",
+  name: "S3A_SL_2_LST____20260126T114301.SEN3",
+  productType: "SENTINEL_3_SLSTR_L2_LST",
+  sensingTime: "2026-01-26T11:43:01Z",
+  size: "300MB",
+  polarisation: "N/A",
+  footprint: { type: "Polygon", coordinates: [] },
+};
+
 function SelectFirst({ select }: { select: boolean }) {
   const gis = useGIS();
   useEffect(() => {
@@ -283,5 +293,33 @@ describe("ProductCard", () => {
 
     expect(screen.getByText("N/A")).toBeInTheDocument();
     expect(screen.queryByText("0%")).not.toBeInTheDocument();
+  });
+
+  it("shows Sentinel-3/SLSTR mission/instrument/label and no polarisation or cloud cover row", () => {
+    render(
+      <Providers>
+        <ProductCard item={SENTINEL3_ITEM} />
+      </Providers>
+    );
+
+    expect(screen.getByText("Sentinel-3")).toBeInTheDocument();
+    expect(screen.getByText("SLSTR")).toBeInTheDocument();
+    expect(screen.getByText("Level-2 LST")).toBeInTheDocument();
+    expect(screen.queryByText("N/A")).not.toBeInTheDocument();
+    expect(screen.queryByText(/polarisation/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/cloud cover/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the placeholder (no image attempt) for Sentinel-3 SLSTR L2 WST", () => {
+    const wstItem: SearchResultItem = { ...SENTINEL3_ITEM, productType: "SENTINEL_3_SLSTR_L2_WST", id: "p6" };
+    render(
+      <Providers>
+        <ProductCard item={wstItem} />
+      </Providers>
+    );
+
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.getByText("No Preview")).toBeInTheDocument();
+    expect(screen.getByText("Level-2 WST")).toBeInTheDocument();
   });
 });

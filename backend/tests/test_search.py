@@ -115,6 +115,38 @@ def test_build_odata_filter_ors_sentinel1_and_sentinel2_branches():
     assert filter_str.count(" or ") >= 1
 
 
+def test_build_odata_filter_builds_sentinel3_branch_with_no_cloud_cover():
+    query = SearchQuery(
+        productType=[ProductType.S3_SLSTR_L2_LST, ProductType.S3_SLSTR_L2_WST],
+        dateFrom="2026-01-01",
+        dateUntil="2026-02-01",
+        aoi="95.0,4.0,98.0,4.0,98.0,6.0,95.0,6.0",
+    )
+    filter_str = build_odata_filter(query)
+    assert "SENTINEL-3" in filter_str
+    assert "SL_2_LST___" in filter_str
+    assert "SL_2_WST___" in filter_str
+    assert "instrumentShortName" in filter_str and "SLSTR" in filter_str
+    assert "cloudCover" not in filter_str
+    assert "SENTINEL-1" not in filter_str
+    assert "SENTINEL-2" not in filter_str
+
+
+def test_build_odata_filter_ors_sentinel1_and_sentinel3_branches():
+    query = SearchQuery(
+        productType=[ProductType.GRD, ProductType.S3_SLSTR_L2_LST],
+        dateFrom="2026-01-01",
+        dateUntil="2026-02-01",
+        aoi="95.0,4.0,98.0,4.0,98.0,6.0,95.0,6.0",
+    )
+    filter_str = build_odata_filter(query)
+    assert "SENTINEL-1" in filter_str
+    assert "SENTINEL-3" in filter_str
+    assert "GRD" in filter_str
+    assert "SL_2_LST___" in filter_str
+    assert filter_str.count(" or ") >= 1
+
+
 @respx.mock
 async def test_search_products_parses_cloud_cover_for_sentinel2(settings):
     respx.post("https://identity.test/token").mock(
@@ -242,6 +274,49 @@ async def test_search_products_leaves_cloud_cover_none_for_sentinel1(settings):
 
     result = await search_products(query, settings, token_manager)
 
+    assert result.results[0].cloudCoverPercentage is None
+
+
+@respx.mock
+async def test_search_products_parses_sentinel3_slstr_lst(settings):
+    respx.post("https://identity.test/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "tok-1", "expires_in": 600})
+    )
+    respx.get("https://catalogue.test/Products").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "@odata.count": 1,
+                "value": [
+                    {
+                        "Id": "S3A_SL_2_LST____20260126T114301",
+                        "Name": "S3A_SL_2_LST____20260126T114301.SEN3",
+                        "ContentDate": {"Start": "2026-01-26T11:43:01.722106Z"},
+                        "ContentLength": 314572800,
+                        "Footprint": (
+                            "geography'SRID=4326;POLYGON((95.0 4.0, 98.0 4.0, "
+                            "98.0 6.0, 95.0 6.0, 95.0 4.0))'"
+                        ),
+                        "Attributes": [
+                            {"Name": "productType", "Value": "SL_2_LST___"},
+                        ],
+                    },
+                ],
+            },
+        )
+    )
+    query = SearchQuery(
+        productType=[ProductType.S3_SLSTR_L2_LST],
+        dateFrom="2026-01-01",
+        dateUntil="2026-02-01",
+        aoi="95.0,4.0,98.0,4.0,98.0,6.0,95.0,6.0",
+    )
+    token_manager = TokenManager(settings)
+
+    result = await search_products(query, settings, token_manager)
+
+    assert result.results[0].productType is ProductType.S3_SLSTR_L2_LST
+    assert result.results[0].polarisation == "N/A"
     assert result.results[0].cloudCoverPercentage is None
 
 

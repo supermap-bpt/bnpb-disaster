@@ -14,6 +14,11 @@ def test_product_type_accepts_sentinel2_values():
     assert ProductType("SENTINEL_2_L2A") == ProductType.S2_L2A
 
 
+def test_product_type_accepts_sentinel3_values():
+    assert ProductType("SENTINEL_3_SLSTR_L2_LST") == ProductType.S3_SLSTR_L2_LST
+    assert ProductType("SENTINEL_3_SLSTR_L2_WST") == ProductType.S3_SLSTR_L2_WST
+
+
 def test_product_type_rejects_unknown_value():
     with pytest.raises(ValueError):
         ProductType("SENTINEL_3_FOO")
