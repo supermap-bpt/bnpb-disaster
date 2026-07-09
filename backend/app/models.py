@@ -174,6 +174,49 @@ class RetryFileDownloadResponse(BaseModel):
     message: str
 
 
+class ProcessLandslideRequest(BaseModel):
+    preSatelliteId: str = Field(..., description="Saved satellite id of the pre-event product.")
+    postSatelliteId: str = Field(..., description="Saved satellite id of the post-event product.")
+    aoi: list[float] | None = Field(
+        default=None,
+        description="Optional crop bbox [minLon, minLat, maxLon, maxLat] to speed up processing.",
+    )
+
+    @model_validator(mode="after")
+    def check_request(self) -> "ProcessLandslideRequest":
+        if self.preSatelliteId == self.postSatelliteId:
+            raise ValueError("preSatelliteId and postSatelliteId must be different products")
+        if self.aoi is not None:
+            if len(self.aoi) != 4:
+                raise ValueError("aoi must be [minLon, minLat, maxLon, maxLat]")
+            min_lon, min_lat, max_lon, max_lat = self.aoi
+            if min_lon >= max_lon or min_lat >= max_lat:
+                raise ValueError("aoi min must be less than max for both lon and lat")
+        return self
+
+
+class LandslideJobResponse(BaseModel):
+    id: str
+    name: str
+    preSatelliteId: str
+    postSatelliteId: str
+    status: str
+    progress: int
+    message: str | None = None
+    stage: str | None = None
+    stageIndex: int
+    totalStages: int
+    thresholdDb: float
+    hasResult: bool
+    createdAt: datetime
+    updatedAt: datetime
+
+
+class LandslideJobsListResponse(BaseModel):
+    items: list[LandslideJobResponse]
+    total: int
+
+
 class ActivityLogEntry(BaseModel):
     id: str
     action: str

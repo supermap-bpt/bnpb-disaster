@@ -176,6 +176,68 @@ export function getSavedSatelliteDownloadFileUrl(id: string): string {
   return `${API_BASE_URL}/api/satellites/${encodeURIComponent(id)}/download-file`;
 }
 
+export interface LandslideJob {
+  id: string;
+  name: string;
+  preSatelliteId: string;
+  postSatelliteId: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  progress: number;
+  message: string | null;
+  stage: string | null;
+  stageIndex: number;
+  totalStages: number;
+  thresholdDb: number;
+  hasResult: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function processLandslide(
+  preSatelliteId: string,
+  postSatelliteId: string,
+  aoi?: [number, number, number, number],
+): Promise<LandslideJob> {
+  const url = `${API_BASE_URL}/api/landslide/process`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ preSatelliteId, postSatelliteId, aoi }),
+  });
+  return parseJsonOrThrow<LandslideJob>(response);
+}
+
+export async function fetchLandslideJobs(): Promise<{ items: LandslideJob[]; total: number }> {
+  const url = `${API_BASE_URL}/api/landslide/jobs`;
+  const response = await fetch(url);
+  return parseJsonOrThrow<{ items: LandslideJob[]; total: number }>(response);
+}
+
+export async function deleteLandslideJob(id: string): Promise<{ success: boolean }> {
+  const url = `${API_BASE_URL}/api/landslide/jobs/${encodeURIComponent(id)}`;
+  const response = await fetch(url, { method: "DELETE" });
+  return parseJsonOrThrow<{ success: boolean }>(response);
+}
+
+export function getLandslideResultUrl(id: string): string {
+  return `${API_BASE_URL}/api/landslide/jobs/${encodeURIComponent(id)}/result`;
+}
+
+export function getLandslidePreviewImageUrl(id: string): string {
+  return `${API_BASE_URL}/api/landslide/jobs/${encodeURIComponent(id)}/preview.png`;
+}
+
+export function getLandslideKmzUrl(id: string): string {
+  return `${API_BASE_URL}/api/landslide/jobs/${encodeURIComponent(id)}/kmz`;
+}
+
+// bounds = [south, west, north, east]
+export async function fetchLandslidePreview(id: string): Promise<{ bounds: [number, number, number, number] }> {
+  const url = `${API_BASE_URL}/api/landslide/jobs/${encodeURIComponent(id)}/preview`;
+  const response = await fetch(url);
+  return parseJsonOrThrow<{ bounds: [number, number, number, number] }>(response);
+}
+
 export interface ActivityLogEntry {
   id: string;
   action: string;

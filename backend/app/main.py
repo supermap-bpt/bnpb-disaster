@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +10,7 @@ from app.config import get_settings
 from app.routers.attributes import router as attributes_router
 from app.routers.download import router as download_router
 from app.routers.geocode import router as geocode_router
+from app.routers.landslide import router as landslide_router
 from app.routers.logs import router as logs_router
 from app.routers.preview import router as preview_router
 from app.routers.satellites import router as satellites_router
@@ -15,6 +18,18 @@ from app.routers.search import router as search_router
 from fastapi.staticfiles import StaticFiles
 
 settings = get_settings()
+
+# Route application loggers through uvicorn's handler so INFO logs (e.g. the
+# landslide SNAP job progress) actually appear on the console. Under uvicorn the
+# root logger has no INFO handler, so app.* logs are otherwise dropped.
+_app_logger = logging.getLogger("app")
+_app_logger.setLevel(logging.INFO)
+_uvicorn_handlers = logging.getLogger("uvicorn").handlers
+if _uvicorn_handlers:
+    _app_logger.handlers = _uvicorn_handlers
+    _app_logger.propagate = False
+else:  # pragma: no cover - fallback when not run under uvicorn
+    logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(
     title="Sentinel-1 SAR Browser API",
@@ -33,6 +48,7 @@ app = FastAPI(
         {"name": "Attributes", "description": "Raw CDSE catalogue attributes for a selected product."},
         {"name": "Satellites", "description": "Saved (bookmarked) satellite products - CRUD over PostgreSQL."},
         {"name": "Logs", "description": "Activity log entries for Save/Download/Delete operations."},
+        {"name": "Landslide", "description": "SNAP SAR change-detection jobs for landslide mapping."},
     ],
 )
 
@@ -65,5 +81,6 @@ app.include_router(preview_router)
 app.include_router(download_router)
 app.include_router(attributes_router)
 app.include_router(satellites_router)
+app.include_router(landslide_router)
 app.include_router(logs_router)
 app.mount("/storage", StaticFiles(directory="storage", check_dir=False), name="storage")
