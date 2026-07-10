@@ -49,7 +49,7 @@ async def test_fetch_quicklook_image_follows_redirect_and_returns_bytes(settings
             301, headers={"Location": "https://download.test/Assets(asset-abc)/$value"}
         )
     )
-    respx.get("https://download.test/Assets(asset-abc)/$value").mock(
+    redirected_route = respx.get("https://download.test/Assets(asset-abc)/$value").mock(
         return_value=httpx.Response(200, content=b"fake-jpeg-bytes")
     )
     token_manager = TokenManager(settings)
@@ -57,3 +57,4 @@ async def test_fetch_quicklook_image_follows_redirect_and_returns_bytes(settings
     result = await fetch_quicklook_image("quicklook-product-1", settings, token_manager)
 
     assert result == b"fake-jpeg-bytes"
+    assert redirected_route.calls.last.request.headers["Authorization"] == "Bearer tok-1"
