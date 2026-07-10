@@ -1,5 +1,6 @@
 from app.models import PreviewResponse
 from app.services.cache import get_cached_footprint, get_cached_product_type
+from app.services.quicklook import has_quicklook, unsupported_preview_message
 from app.services.render import footprint_bbox, is_renderable
 
 
@@ -9,12 +10,8 @@ async def get_preview(product_id: str) -> PreviewResponse:
         raise ValueError(f"No cached footprint for product {product_id}. Run a search first.")
 
     product_type = get_cached_product_type(product_id)
-    if product_type is not None and not is_renderable(product_type):
-        raise ValueError(
-            f"Citra asli belum tersedia untuk produk {product_type.value} "
-            "(Process API Sentinel Hub hanya mendukung koleksi GRD untuk Sentinel-1 "
-            "dan L2A untuk Sentinel-2)."
-        )
+    if product_type is not None and not (is_renderable(product_type) or has_quicklook(product_type)):
+        raise ValueError(unsupported_preview_message(product_type))
 
     min_lon, min_lat, max_lon, max_lat = footprint_bbox(footprint)
     bounds = [[min_lat, min_lon], [max_lat, max_lon]]

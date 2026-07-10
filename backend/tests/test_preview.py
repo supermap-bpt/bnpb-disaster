@@ -3,7 +3,13 @@ import pytest
 import respx
 
 from app.models import Footprint, ProductType
-from app.services.cache import cache_footprint, cache_product_type, cache_sensing_time, get_cached_footprint
+from app.services.cache import (
+    cache_footprint,
+    cache_product_type,
+    cache_quicklook_asset_id,
+    cache_sensing_time,
+    get_cached_footprint,
+)
 from app.services.preview import get_preview
 
 
@@ -62,6 +68,32 @@ def test_preview_endpoint_rejects_slc_upfront(client):
     assert "GRD" in response.json()["detail"]
 
 
+def test_preview_endpoint_accepts_sentinel3_lst(client):
+    cache_footprint(
+        "s3-lst-metadata-1",
+        Footprint(coordinates=[[[95.0, 4.0], [98.0, 4.0], [98.0, 6.0], [95.0, 6.0]]]),
+    )
+    cache_product_type("s3-lst-metadata-1", ProductType.S3_SLSTR_L2_LST)
+
+    response = client.get("/api/preview/s3-lst-metadata-1")
+
+    assert response.status_code == 200
+    assert response.json()["tileUrl"] == "/api/preview-image/s3-lst-metadata-1"
+
+
+def test_preview_endpoint_rejects_sentinel3_wst_upfront(client):
+    cache_footprint(
+        "s3-wst-metadata-1",
+        Footprint(coordinates=[[[95.0, 4.0], [98.0, 4.0], [98.0, 6.0], [95.0, 6.0]]]),
+    )
+    cache_product_type("s3-wst-metadata-1", ProductType.S3_SLSTR_L2_WST)
+
+    response = client.get("/api/preview/s3-wst-metadata-1")
+
+    assert response.status_code == 404
+    assert "WST" in response.json()["detail"]
+
+
 @respx.mock
 def test_preview_image_endpoint_returns_png_for_grd(client):
     respx.post("https://identity.test/token").mock(
@@ -101,3 +133,43 @@ def test_preview_image_endpoint_returns_422_for_slc(client):
 
     assert response.status_code == 422
     assert "GRD" in response.json()["detail"]
+
+
+@respx.mock
+def test_preview_image_endpoint_returns_jpeg_for_sentinel3_lst(client):
+    respx.post("https://identity.test/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "tok-1", "expires_in": 600})
+    )
+    cache_footprint(
+        "s3-lst-router-1",
+        Footprint(coordinates=[[[95.0, 4.0], [98.0, 4.0], [98.0, 6.0], [95.0, 6.0]]]),
+    )
+    cache_product_type("s3-lst-router-1", ProductType.S3_SLSTR_L2_LST)
+    cache_quicklook_asset_id("s3-lst-router-1", "asset-xyz")
+    respx.get("https://catalogue.test/Assets(asset-xyz)/$value").mock(
+        return_value=httpx.Response(
+            301, headers={"Location": "https://download.test/Assets(asset-xyz)/$value"}
+        )
+    )
+    respx.get("https://download.test/Assets(asset-xyz)/$value").mock(
+        return_value=httpx.Response(200, content=b"fake-jpeg-bytes")
+    )
+
+    response = client.get("/api/preview-image/s3-lst-router-1")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/jpeg"
+    assert response.content == b"fake-jpeg-bytes"
+
+
+def test_preview_image_endpoint_returns_422_for_sentinel3_wst(client):
+    cache_footprint(
+        "s3-wst-router-1",
+        Footprint(coordinates=[[[95.0, 4.0], [98.0, 4.0], [98.0, 6.0], [95.0, 6.0]]]),
+    )
+    cache_product_type("s3-wst-router-1", ProductType.S3_SLSTR_L2_WST)
+
+    response = client.get("/api/preview-image/s3-wst-router-1")
+
+    assert response.status_code == 422
+    assert "WST" in response.json()["detail"]
