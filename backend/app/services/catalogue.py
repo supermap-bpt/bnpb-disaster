@@ -179,6 +179,11 @@ async def search_products(
 
     params = {
         "$filter": odata_filter,
+        # Must be a LIST, not "Attributes,Assets": CDSE rejects a comma-joined
+        # $expand with HTTP 400 ("Expand parameter only accepts following
+        # values..."). httpx serializes a list as repeated $expand=... params,
+        # which is the form CDSE's OData actually requires - verified live.
+        # Collapsing this back to a single string breaks every search.
         "$expand": ["Attributes", "Assets"],
         "$top": SEARCH_PAGE_SIZE,
         "$skip": query.skip,
