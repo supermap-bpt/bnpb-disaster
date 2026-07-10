@@ -179,7 +179,7 @@ async def search_products(
 
     params = {
         "$filter": odata_filter,
-        "$expand": "Attributes,Assets",
+        "$expand": ["Attributes", "Assets"],
         "$top": SEARCH_PAGE_SIZE,
         "$skip": query.skip,
         "$count": "true",

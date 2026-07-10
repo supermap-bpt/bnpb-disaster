@@ -462,7 +462,8 @@ async def test_search_products_caches_quicklook_asset_id_when_present(settings):
     assert result.results[0].productType is ProductType.S3_SLSTR_L2_LST
     assert get_cached_quicklook_asset_id("S3A_SL_2_LST____20260610T160122") == "asset-quicklook-1"
     request_url = str(catalogue_route.calls.last.request.url)
-    assert "Attributes,Assets" in urllib.parse.unquote(request_url)
+    assert request_url.count("expand=Attributes") == 1
+    assert request_url.count("expand=Assets") == 1
 
 
 @respx.mock
