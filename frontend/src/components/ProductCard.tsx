@@ -19,17 +19,20 @@ const PRODUCT_TYPE_LABEL: Record<string, string> = {
   SENTINEL_3_SLSTR_L2_WST: "Level-2 WST",
 };
 
-// Process API (and therefore a renderable thumbnail) only supports the GRD
-// collection for Sentinel-1 (confirmed against real CDSE: POST with
-// type="sentinel-1-slc" returns 400 "Invalid collection type") and the L2A
-// collection for Sentinel-2 (L1C is top-of-atmosphere, left as a placeholder
-// by product decision, matching the SLC precedent).
+// Which product types have a real, renderable preview. GRD/L2A go through
+// the Sentinel Hub Process API (confirmed against real CDSE: POST with
+// type="sentinel-1-slc" returns 400 "Invalid collection type"; L1C is
+// top-of-atmosphere, left as a placeholder by product decision, matching the
+// SLC precedent). Sentinel-3 SLSTR L2 LST is proxied from CDSE's own
+// QUICKLOOK asset instead (no Process API involved) - WST has no such asset
+// (verified against the real CDSE catalogue: 0/20 sampled products had one),
+// so it stays a placeholder.
 const THUMBNAIL_SUPPORTED: Record<string, boolean> = {
   SENTINEL_1_GRD: true,
   SENTINEL_1_SLC: false,
   SENTINEL_2_L2A: true,
   SENTINEL_2_L1C: false,
-  SENTINEL_3_SLSTR_L2_LST: false,
+  SENTINEL_3_SLSTR_L2_LST: true,
   SENTINEL_3_SLSTR_L2_WST: false,
 };
 

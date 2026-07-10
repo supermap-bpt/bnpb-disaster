@@ -163,4 +163,24 @@ describe("ProductInfoModal", () => {
       "http://localhost:8000/api/preview-image/p2"
     );
   });
+
+  it("shows a thumbnail for Sentinel-3 SLSTR L2 LST items", async () => {
+    vi.mocked(fetchProductAttributes).mockResolvedValue([]);
+
+    render(
+      <Providers>
+        <ProductInfoModal
+          item={{ ...SAMPLE_ITEM, productType: "SENTINEL_3_SLSTR_L2_LST", id: "p3" }}
+          open={true}
+          onOpenChange={() => {}}
+        />
+      </Providers>
+    );
+
+    await waitFor(() => expect(fetchProductAttributes).toHaveBeenCalled());
+    expect(screen.getByRole("img")).toHaveAttribute(
+      "src",
+      "http://localhost:8000/api/preview-image/p3"
+    );
+  });
 });

@@ -310,6 +310,19 @@ describe("ProductCard", () => {
     expect(screen.queryByText(/cloud cover/i)).not.toBeInTheDocument();
   });
 
+  it("shows a real thumbnail for Sentinel-3 SLSTR L2 LST", () => {
+    render(
+      <Providers>
+        <ProductCard item={SENTINEL3_ITEM} />
+      </Providers>
+    );
+
+    expect(screen.getByRole("img", { name: SENTINEL3_ITEM.name })).toHaveAttribute(
+      "src",
+      "http://localhost:8000/api/preview-image/p5"
+    );
+  });
+
   it("shows the placeholder (no image attempt) for Sentinel-3 SLSTR L2 WST", () => {
     const wstItem: SearchResultItem = { ...SENTINEL3_ITEM, productType: "SENTINEL_3_SLSTR_L2_WST", id: "p6" };
     render(
