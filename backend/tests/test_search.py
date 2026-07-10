@@ -1,5 +1,3 @@
-import urllib.parse
-
 import httpx
 import pytest
 import respx
