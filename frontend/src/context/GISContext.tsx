@@ -11,7 +11,10 @@ export interface GeocodeResult {
 
 export interface Footprint {
   type: string;
-  coordinates: number[][][];
+  // Polygon: [ring]. MultiPolygon: [[ring], [ring], ...] - CDSE returns
+  // MultiPolygon for footprints crossing the antimeridian (e.g. Sentinel-3
+  // WST's near-global, near-polar swaths).
+  coordinates: number[][][] | number[][][][];
 }
 
 export interface SearchResultItem {

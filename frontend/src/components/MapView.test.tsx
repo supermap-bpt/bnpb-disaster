@@ -1,5 +1,5 @@
 import { act, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useEffect, type ReactNode } from "react";
 import { GISProvider, useGIS } from "../context/GISContext";
 
@@ -7,6 +7,8 @@ const geoJsonClickHandlers: Record<string, () => void> = {};
 const geoJsonHoverHandlers: Record<string, { mouseover?: () => void; mouseout?: () => void }> = {};
 const geoJsonStyleLog: Record<string, any> = {};
 const fitBoundsMock = vi.fn();
+const getBoundsMock = vi.fn();
+let moveEndHandler: (() => void) | null = null;
 
 // Real react-leaflet's useMap() returns the SAME Leaflet Map instance across
 // renders. A mock that returns a fresh object literal every call breaks any
@@ -14,7 +16,11 @@ const fitBoundsMock = vi.fn();
 // effect every render, which (since the effect itself causes a re-render via
 // context setters) is an infinite loop that hangs the test runner. Must be a
 // stable singleton.
-const mapInstanceMock = { fitBounds: fitBoundsMock, attributionControl: { setPrefix: vi.fn() } };
+const mapInstanceMock = {
+  fitBounds: fitBoundsMock,
+  attributionControl: { setPrefix: vi.fn() },
+  getBounds: getBoundsMock,
+};
 
 vi.mock("react-leaflet", () => ({
   MapContainer: ({ children }: { children: ReactNode }) => (
@@ -37,13 +43,18 @@ vi.mock("react-leaflet", () => ({
   ImageOverlay: ({ url }: { url: string }) => <img data-testid="preview-overlay" src={url} />,
   ZoomControl: () => <div data-testid="zoom-control" />,
   useMap: () => mapInstanceMock,
+  useMapEvents: (handlers: { moveend?: () => void }) => {
+    moveEndHandler = handlers.moveend ?? null;
+    return mapInstanceMock;
+  },
 }));
 
 vi.mock("../api/client", () => ({
   fetchPreview: vi.fn(),
+  fetchSearch: vi.fn(),
 }));
 
-import { fetchPreview } from "../api/client";
+import { fetchPreview, fetchSearch } from "../api/client";
 import MapView, { aoiRingToBounds } from "./MapView";
 
 beforeEach(() => {
@@ -56,6 +67,9 @@ beforeEach(() => {
     tileUrl: "https://wms.test/process?access_token=default",
     bounds: [[4, 95], [6, 98]],
   });
+  vi.mocked(fetchSearch).mockReset();
+  getBoundsMock.mockReset();
+  moveEndHandler = null;
 });
 
 describe("aoiRingToBounds", () => {
@@ -228,5 +242,133 @@ describe("MapView", () => {
       "src",
       "https://wms.test/process?access_token=tok"
     );
+  });
+});
+
+const WST_FILTER = {
+  productType: ["SENTINEL_3_SLSTR_L2_WST"] as const,
+  cloudCoverMax: 100,
+  dateFrom: "2025-01-01",
+  dateUntil: "2025-01-31",
+};
+
+function FilterSeeder({ filter, children }: { filter: typeof WST_FILTER | null; children: ReactNode }) {
+  const gis = useGIS();
+  useEffect(() => {
+    gis.setLastSearchFilter(filter as any);
+  }, []);
+  return <>{children}</>;
+}
+
+describe("Sentinel-3 WST viewport re-search", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("re-searches the current map viewport, debounced, when WST is the active filter", async () => {
+    vi.mocked(fetchSearch).mockResolvedValue({ results: [SAMPLE_ITEM], total: 1 });
+    getBoundsMock.mockReturnValue({
+      getWest: () => 90,
+      getEast: () => 100,
+      getNorth: () => 10,
+      getSouth: () => -10,
+    });
+
+    render(
+      <GISProvider>
+        <FilterSeeder filter={WST_FILTER}>
+          <MapView />
+        </FilterSeeder>
+      </GISProvider>
+    );
+
+    act(() => moveEndHandler?.());
+    expect(fetchSearch).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(fetchSearch).toHaveBeenCalledWith(
+      WST_FILTER,
+      [
+        [90, -10],
+        [100, -10],
+        [100, 10],
+        [90, 10],
+      ],
+      0
+    );
+  });
+
+  it("does not re-search when the active filter has no Sentinel-3 WST leaf checked", async () => {
+    render(
+      <GISProvider>
+        <FilterSeeder filter={{ ...WST_FILTER, productType: ["SENTINEL_1_GRD"] as any }}>
+          <MapView />
+        </FilterSeeder>
+      </GISProvider>
+    );
+
+    act(() => moveEndHandler?.());
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(fetchSearch).not.toHaveBeenCalled();
+  });
+
+  it("does not re-search before any search has been submitted", async () => {
+    render(
+      <GISProvider>
+        <FilterSeeder filter={null}>
+          <MapView />
+        </FilterSeeder>
+      </GISProvider>
+    );
+
+    act(() => moveEndHandler?.());
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(fetchSearch).not.toHaveBeenCalled();
+  });
+
+  it("debounces rapid successive pans into a single re-search", async () => {
+    vi.mocked(fetchSearch).mockResolvedValue({ results: [], total: 0 });
+    getBoundsMock.mockReturnValue({
+      getWest: () => 90,
+      getEast: () => 100,
+      getNorth: () => 10,
+      getSouth: () => -10,
+    });
+
+    render(
+      <GISProvider>
+        <FilterSeeder filter={WST_FILTER}>
+          <MapView />
+        </FilterSeeder>
+      </GISProvider>
+    );
+
+    act(() => moveEndHandler?.());
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+    act(() => moveEndHandler?.());
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+    act(() => moveEndHandler?.());
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(fetchSearch).toHaveBeenCalledTimes(1);
   });
 });

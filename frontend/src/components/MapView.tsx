@@ -1,8 +1,19 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { LatLngBoundsExpression } from "leaflet";
-import { GeoJSON, ImageOverlay, MapContainer, TileLayer, ZoomControl, useMap } from "react-leaflet";
+import {
+  GeoJSON,
+  ImageOverlay,
+  MapContainer,
+  TileLayer,
+  ZoomControl,
+  useMap,
+  useMapEvents,
+} from "react-leaflet";
 import { useGIS, type AoiRing, type SearchResultItem } from "../context/GISContext";
-import { fetchPreview } from "../api/client";
+import { fetchPreview, fetchSearch } from "../api/client";
+import { flattenFootprintPoints } from "@/lib/geometry";
+
+const WST_VIEWPORT_RESEARCH_DEBOUNCE_MS = 500;
 
 export function aoiRingToBounds(ring: AoiRing): LatLngBoundsExpression {
   const lons = ring.map(([lon]) => lon);
@@ -14,7 +25,7 @@ export function aoiRingToBounds(ring: AoiRing): LatLngBoundsExpression {
 }
 
 function footprintBounds(item: SearchResultItem): LatLngBoundsExpression {
-  const points = item.footprint.coordinates.flat();
+  const points = flattenFootprintPoints(item.footprint.coordinates);
   const lons = points.map(([lon]) => lon);
   const lats = points.map(([, lat]) => lat);
   return [
@@ -135,11 +146,53 @@ function RemoveLeafletPrefix() {
   return null;
 }
 
+/** Sentinel-3 SLSTR L2 WST swaths are near-global, so (unlike every other
+ * product type, which searches a geocoded place's AOI) browsing WST results
+ * works by panning the map itself - each pan re-searches the current
+ * viewport, debounced, matching Copernicus Browser's behavior. Scoped to WST
+ * only per product decision; other product types keep the address-search flow. */
+function WstViewportResearch() {
+  const { lastSearchFilter, setSearchResults, setIsSearching, setError } = useGIS();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const map = useMapEvents({
+    moveend: () => {
+      if (!lastSearchFilter?.productType.includes("SENTINEL_3_SLSTR_L2_WST")) return;
+
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        const bounds = map.getBounds();
+        const ring: AoiRing = [
+          [bounds.getWest(), bounds.getSouth()],
+          [bounds.getEast(), bounds.getSouth()],
+          [bounds.getEast(), bounds.getNorth()],
+          [bounds.getWest(), bounds.getNorth()],
+        ];
+        setIsSearching(true);
+        setError(null);
+        fetchSearch(lastSearchFilter, ring, 0)
+          .then(({ results, total }) => setSearchResults(results, total))
+          .catch((err) => setError(err instanceof Error ? err.message : "Gagal memuat ulang area peta."))
+          .finally(() => setIsSearching(false));
+      }, WST_VIEWPORT_RESEARCH_DEBOUNCE_MS);
+    },
+  });
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  return null;
+}
+
 function MapView() {
   return (
     <MapContainer
       center={[-2.5, 118]}
       zoom={5}
+      minZoom={2}
       zoomControl={false}
       className="h-full w-full"
     >
@@ -154,6 +207,7 @@ function MapView() {
       <FootprintLayers />
       <SelectedProductSync />
       <PreviewLayer />
+      <WstViewportResearch />
     </MapContainer>
   );
 }
