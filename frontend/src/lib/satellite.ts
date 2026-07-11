@@ -10,6 +10,15 @@ export function isDemnas(productType: string): boolean {
   return productType.startsWith("DEMNAS");
 }
 
+export function getDemnasPreviewImageUrl(id: string): string {
+  return `https://tanahair.indonesia.go.id/demnas/images/DEMNAS_${id}.jpg`;
+}
+
+export function getDemnasLoginDownloadUrl(id: string): string {
+  const filename = `DEMNAS_${id}_v1.0.tif`;
+  return `https://tanahair.indonesia.go.id/portal-web/login?page=/unduh/demnas&filename=${encodeURIComponent(filename)}`;
+}
+
 export function getMission(productType: string): string {
   if (isDemnas(productType)) return "DEMNAS";
   if (isSentinel3(productType)) return "Sentinel-3";
