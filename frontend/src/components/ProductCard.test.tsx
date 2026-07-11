@@ -57,6 +57,16 @@ const SENTINEL3_ITEM: SearchResultItem = {
   footprint: { type: "Polygon", coordinates: [] },
 };
 
+const DEMNAS_ITEM: SearchResultItem = {
+  id: "demnas-1",
+  name: "DSMHYDRO_32BIT_1118-631.tif",
+  productType: "DEMNAS_25K",
+  sensingTime: "2014-01-01T00:00:00Z",
+  size: "N/A",
+  polarisation: "N/A",
+  footprint: { type: "Polygon", coordinates: [] },
+};
+
 function SelectFirst({ select }: { select: boolean }) {
   const gis = useGIS();
   useEffect(() => {
@@ -334,5 +344,50 @@ describe("ProductCard", () => {
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
     expect(screen.getByText("No Preview")).toBeInTheDocument();
     expect(screen.getByText("Level-2 WST")).toBeInTheDocument();
+  });
+
+  it("shows DEMNAS mission/instrument/label, just the year for sensing time, no polarisation/cloud-cover row, no thumbnail", () => {
+    render(
+      <Providers>
+        <ProductCard item={DEMNAS_ITEM} />
+      </Providers>
+    );
+
+    expect(screen.getByText("DEMNAS")).toBeInTheDocument();
+    expect(screen.getByText("DEM")).toBeInTheDocument();
+    expect(screen.getByText("25K")).toBeInTheDocument();
+    expect(screen.getByText("2014")).toBeInTheDocument();
+    expect(screen.queryByText("2014-01-01T00:00:00Z")).not.toBeInTheDocument();
+    expect(screen.queryByText(/polarisation/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/cloud cover/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.getByText("No Preview")).toBeInTheDocument();
+  });
+
+  it("DEMNAS Download link points at BIG's portal and opens in a new tab", () => {
+    render(
+      <Providers>
+        <ProductCard item={DEMNAS_ITEM} />
+      </Providers>
+    );
+
+    const link = screen.getByRole("link", { name: /download/i });
+    expect(link).toHaveAttribute("href", "https://tanahair.indonesia.go.id/portal-web/unduh/demnas");
+    expect(link).toHaveAttribute("target", "_blank");
+  });
+
+  it("shows a dash for the year when DEMNAS sensingTime is the unknown-year sentinel", () => {
+    const noYearItem: SearchResultItem = {
+      ...DEMNAS_ITEM,
+      id: "demnas-2",
+      sensingTime: "0001-01-01T00:00:00Z",
+    };
+    render(
+      <Providers>
+        <ProductCard item={noYearItem} />
+      </Providers>
+    );
+
+    expect(screen.getByText("-")).toBeInTheDocument();
   });
 });

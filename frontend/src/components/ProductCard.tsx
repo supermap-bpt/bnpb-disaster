@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useGIS, type SearchResultItem } from "../context/GISContext";
 import { getDownloadUrl, getPreviewImageUrl } from "../api/client";
-import { getInstrument, getMission, isSentinel2, isSentinel3 } from "@/lib/satellite";
+import { getInstrument, getMission, hasPreview, isDemnas, isSentinel2, isSentinel3 } from "@/lib/satellite";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,24 +17,16 @@ const PRODUCT_TYPE_LABEL: Record<string, string> = {
   SENTINEL_2_L2A: "L2A",
   SENTINEL_3_SLSTR_L2_LST: "Level-2 LST",
   SENTINEL_3_SLSTR_L2_WST: "Level-2 WST",
+  DEMNAS_25K: "25K",
+  DEMNAS_50K: "50K",
 };
 
-// Which product types have a real, renderable preview. GRD/L2A go through
-// the Sentinel Hub Process API (confirmed against real CDSE: POST with
-// type="sentinel-1-slc" returns 400 "Invalid collection type"; L1C is
-// top-of-atmosphere, left as a placeholder by product decision, matching the
-// SLC precedent). Sentinel-3 SLSTR L2 LST is proxied from CDSE's own
-// QUICKLOOK asset instead (no Process API involved) - WST has no such asset
-// (verified against the real CDSE catalogue: 0/20 sampled products had one),
-// so it stays a placeholder.
-const THUMBNAIL_SUPPORTED: Record<string, boolean> = {
-  SENTINEL_1_GRD: true,
-  SENTINEL_1_SLC: false,
-  SENTINEL_2_L2A: true,
-  SENTINEL_2_L1C: false,
-  SENTINEL_3_SLSTR_L2_LST: true,
-  SENTINEL_3_SLSTR_L2_WST: false,
-};
+const DEMNAS_PORTAL_URL = "https://tanahair.indonesia.go.id/portal-web/unduh/demnas";
+
+function demnasYearLabel(sensingTime: string): string {
+  const year = sensingTime.slice(0, 4);
+  return year === "0001" ? "-" : year;
+}
 
 function ProductCard({ item }: { item: SearchResultItem }) {
   const { selectedProductId, selectProduct, setHoveredProductId } = useGIS();
@@ -43,7 +35,7 @@ function ProductCard({ item }: { item: SearchResultItem }) {
   const [imageFailed, setImageFailed] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
-  const showThumbnail = THUMBNAIL_SUPPORTED[item.productType] && !imageFailed;
+  const showThumbnail = hasPreview(item.productType) && !imageFailed;
 
   return (
     <Card
@@ -78,7 +70,7 @@ function ProductCard({ item }: { item: SearchResultItem }) {
           <dd>{getInstrument(item.productType)}</dd>
           <dt>{t("type")}</dt>
           <dd>{PRODUCT_TYPE_LABEL[item.productType] ?? item.productType}</dd>
-          {isSentinel3(item.productType) ? null : isSentinel2(item.productType) ? (
+          {isDemnas(item.productType) || isSentinel3(item.productType) ? null : isSentinel2(item.productType) ? (
             <>
               <dt>{t("cloudCover")}</dt>
               <dd>{item.cloudCoverPercentage != null ? `${Math.round(item.cloudCoverPercentage)}%` : "N/A"}</dd>
@@ -90,7 +82,7 @@ function ProductCard({ item }: { item: SearchResultItem }) {
             </>
           )}
           <dt>{t("sensingTime")}</dt>
-          <dd>{item.sensingTime}</dd>
+          <dd>{isDemnas(item.productType) ? demnasYearLabel(item.sensingTime) : item.sensingTime}</dd>
           <dt>{t("size")}</dt>
           <dd>{item.size}</dd>
         </dl>
@@ -114,9 +106,15 @@ function ProductCard({ item }: { item: SearchResultItem }) {
             )}
           </Button>
           <Button asChild type="button" size="sm" variant="outline" className="h-7 flex-1 px-2 text-[11px]">
-            <a href={getDownloadUrl(item.id)} download>
-              <Download className="h-3 w-3" /> {t("download")}
-            </a>
+            {isDemnas(item.productType) ? (
+              <a href={DEMNAS_PORTAL_URL} target="_blank" rel="noopener noreferrer">
+                <Download className="h-3 w-3" /> {t("download")}
+              </a>
+            ) : (
+              <a href={getDownloadUrl(item.id)} download>
+                <Download className="h-3 w-3" /> {t("download")}
+              </a>
+            )}
           </Button>
           <Button
             type="button"

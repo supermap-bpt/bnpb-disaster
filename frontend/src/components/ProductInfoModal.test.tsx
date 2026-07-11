@@ -101,6 +101,28 @@ describe("ProductInfoModal", () => {
     expect(screen.getByText("weird-value")).toBeInTheDocument();
   });
 
+  it("renders a DEMNAS tile's varying properties generically, same as any unmapped attribute", async () => {
+    vi.mocked(fetchProductAttributes).mockResolvedValue([
+      { name: "REGION", value: "SUMATERA" },
+      { name: "SENSOR", value: "TERRASAR X" },
+      { name: "SKALA", value: "25K" },
+    ]);
+
+    render(
+      <Providers>
+        <ProductInfoModal
+          item={{ ...SAMPLE_ITEM, productType: "DEMNAS_25K", id: "demnas-1" }}
+          open={true}
+          onOpenChange={() => {}}
+        />
+      </Providers>
+    );
+
+    expect(await screen.findByText("SUMATERA")).toBeInTheDocument();
+    expect(screen.getByText("TERRASAR X")).toBeInTheDocument();
+    expect(screen.getByText("25K")).toBeInTheDocument();
+  });
+
   it("shows an error message when the attributes request fails", async () => {
     vi.mocked(fetchProductAttributes).mockRejectedValue(new Error("No cached data for product p1."));
 
