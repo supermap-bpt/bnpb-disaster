@@ -346,7 +346,7 @@ describe("ProductCard", () => {
     expect(screen.getByText("Level-2 WST")).toBeInTheDocument();
   });
 
-  it("shows DEMNAS mission/instrument/label, just the year for sensing time, no polarisation/cloud-cover row, no thumbnail", () => {
+  it("shows DEMNAS mission/instrument/label, just the year for sensing time, no polarisation/cloud-cover row, and a real preview thumbnail", () => {
     render(
       <Providers>
         <ProductCard item={DEMNAS_ITEM} />
@@ -360,11 +360,26 @@ describe("ProductCard", () => {
     expect(screen.queryByText("2014-01-01T00:00:00Z")).not.toBeInTheDocument();
     expect(screen.queryByText(/polarisation/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/cloud cover/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: DEMNAS_ITEM.name })).toHaveAttribute(
+      "src",
+      "https://tanahair.indonesia.go.id/demnas/images/DEMNAS_demnas-1.jpg"
+    );
+  });
+
+  it("falls back to the placeholder if the DEMNAS thumbnail image fails to load", () => {
+    render(
+      <Providers>
+        <ProductCard item={DEMNAS_ITEM} />
+      </Providers>
+    );
+
+    fireEvent.error(screen.getByRole("img", { name: DEMNAS_ITEM.name }));
+
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
     expect(screen.getByText("No Preview")).toBeInTheDocument();
   });
 
-  it("DEMNAS Download link points at BIG's portal and opens in a new tab", () => {
+  it("DEMNAS Download link points at BIG's login deep-link with the tile's filename, and opens in a new tab", () => {
     render(
       <Providers>
         <ProductCard item={DEMNAS_ITEM} />
@@ -372,7 +387,10 @@ describe("ProductCard", () => {
     );
 
     const link = screen.getByRole("link", { name: /download/i });
-    expect(link).toHaveAttribute("href", "https://tanahair.indonesia.go.id/portal-web/unduh/demnas");
+    expect(link).toHaveAttribute(
+      "href",
+      "https://tanahair.indonesia.go.id/portal-web/login?page=/unduh/demnas&filename=DEMNAS_demnas-1_v1.0.tif"
+    );
     expect(link).toHaveAttribute("target", "_blank");
   });
 

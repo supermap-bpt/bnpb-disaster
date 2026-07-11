@@ -1,7 +1,16 @@
 import { useState } from "react";
 import { useGIS, type SearchResultItem } from "../context/GISContext";
 import { getDownloadUrl, getPreviewImageUrl } from "../api/client";
-import { getInstrument, getMission, hasPreview, isDemnas, isSentinel2, isSentinel3 } from "@/lib/satellite";
+import {
+  getDemnasLoginDownloadUrl,
+  getDemnasPreviewImageUrl,
+  getInstrument,
+  getMission,
+  hasPreview,
+  isDemnas,
+  isSentinel2,
+  isSentinel3,
+} from "@/lib/satellite";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,8 +30,6 @@ const PRODUCT_TYPE_LABEL: Record<string, string> = {
   DEMNAS_50K: "50K",
 };
 
-const DEMNAS_PORTAL_URL = "https://tanahair.indonesia.go.id/portal-web/unduh/demnas";
-
 function demnasYearLabel(sensingTime: string): string {
   const year = sensingTime.slice(0, 4);
   return year === "0001" ? "-" : year;
@@ -35,7 +42,7 @@ function ProductCard({ item }: { item: SearchResultItem }) {
   const [imageFailed, setImageFailed] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
-  const showThumbnail = hasPreview(item.productType) && !imageFailed;
+  const showThumbnail = (isDemnas(item.productType) || hasPreview(item.productType)) && !imageFailed;
 
   return (
     <Card
@@ -49,7 +56,7 @@ function ProductCard({ item }: { item: SearchResultItem }) {
     >
       {showThumbnail ? (
         <img
-          src={getPreviewImageUrl(item.id)}
+          src={isDemnas(item.productType) ? getDemnasPreviewImageUrl(item.id) : getPreviewImageUrl(item.id)}
           alt={item.name}
           onError={() => setImageFailed(true)}
           className="h-16 w-16 shrink-0 rounded-md object-cover"
@@ -107,7 +114,7 @@ function ProductCard({ item }: { item: SearchResultItem }) {
           </Button>
           <Button asChild type="button" size="sm" variant="outline" className="h-7 flex-1 px-2 text-[11px]">
             {isDemnas(item.productType) ? (
-              <a href={DEMNAS_PORTAL_URL} target="_blank" rel="noopener noreferrer">
+              <a href={getDemnasLoginDownloadUrl(item.id)} target="_blank" rel="noopener noreferrer">
                 <Download className="h-3 w-3" /> {t("download")}
               </a>
             ) : (
