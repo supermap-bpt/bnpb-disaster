@@ -12,7 +12,7 @@ import {
 import { useGIS, type AoiRing, type SearchResultItem } from "../context/GISContext";
 import { fetchPreview, fetchSearch } from "../api/client";
 import { flattenFootprintPoints } from "@/lib/geometry";
-import { hasPreview } from "@/lib/satellite";
+import { getDemnasLoginDownloadUrl, getDemnasPreviewImageUrl, hasPreview } from "@/lib/satellite";
 
 const WST_VIEWPORT_RESEARCH_DEBOUNCE_MS = 500;
 
@@ -72,14 +72,33 @@ export function footprintStyle(isSelected: boolean, isHovered: boolean) {
 }
 
 /** DEMNAS's full matching-tile coverage grid (can be thousands of tiles),
- * drawn as one merged, non-interactive layer - unlike FootprintLayers below,
- * which renders one clickable/selectable GeoJSON per currently-loaded Sidebar
- * card. Only the current page's cards are individually interactive, since
- * only they have full backend-cached data for View on Map/Info/Save. */
+ * drawn as one merged layer - unlike FootprintLayers below, which renders one
+ * clickable/selectable GeoJSON per currently-loaded Sidebar card. Only the
+ * current page's cards are tied into selection/preview state, since only
+ * they have full backend-cached data for View on Map/Info/Save; clicking a
+ * coverage-grid tile instead pops up its BIG-hosted preview image, filename,
+ * and login download link - self-contained from the tile's id alone. */
+const DEMNAS_TILE_STYLE = { color: "#60a5fa", weight: 1, fillOpacity: 0.02 };
+const DEMNAS_TILE_HOVER_STYLE = { color: "#3b82f6", weight: 2, fillOpacity: 0.12 };
+
+function buildDemnasPopupHtml(id: string): string {
+  const previewUrl = getDemnasPreviewImageUrl(id);
+  const filename = `DEMNAS_${id}_v1.0.tif`;
+  const downloadUrl = getDemnasLoginDownloadUrl(id);
+  return `
+    <div style="display:flex;flex-direction:column;gap:6px;min-width:160px;">
+      <img src="${previewUrl}" alt="${filename}" onerror="this.style.display='none'" style="width:100%;border-radius:4px;" />
+      <span style="font-size:11px;word-break:break-all;">${filename}</span>
+      <a href="${downloadUrl}" target="_blank" rel="noopener noreferrer"
+         style="display:inline-block;text-align:center;background:#3b82f6;color:#fff;font-size:11px;padding:4px 8px;border-radius:4px;text-decoration:none;">
+        Download
+      </a>
+    </div>
+  `;
+}
+
 function DemnasCoverageLayer() {
   const { demnasFootprints } = useGIS();
-
-  console.log("DEMNAS footprints:", demnasFootprints.length);
 
   if (demnasFootprints.length === 0) return null;
 
@@ -92,15 +111,17 @@ function DemnasCoverageLayer() {
     })),
   };
 
-  console.log("GeoJSON features:", featureCollection.features.length);
-  console.log("First feature:", featureCollection.features[0]);
-
   return (
     <GeoJSON
       key={`${demnasFootprints.length}-${demnasFootprints[0]?.id}-${demnasFootprints[demnasFootprints.length - 1]?.id}`}
       data={featureCollection as any}
-      interactive={false}
-      style={{ color: "#60a5fa", weight: 1, fillOpacity: 0.02 }}
+      interactive={true}
+      style={DEMNAS_TILE_STYLE}
+      onEachFeature={(feature: any, layer: any) => {
+        layer.bindPopup(buildDemnasPopupHtml(feature.properties.id));
+        layer.on("mouseover", () => layer.setStyle(DEMNAS_TILE_HOVER_STYLE));
+        layer.on("mouseout", () => layer.setStyle(DEMNAS_TILE_STYLE));
+      }}
     />
   );
 }

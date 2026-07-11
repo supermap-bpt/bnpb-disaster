@@ -6,7 +6,7 @@ import { GISProvider, useGIS, type SearchResultItem } from "../context/GISContex
 const geoJsonClickHandlers: Record<string, () => void> = {};
 const geoJsonHoverHandlers: Record<string, { mouseover?: () => void; mouseout?: () => void }> = {};
 const geoJsonStyleLog: Record<string, any> = {};
-const demnasCoverageLog: { featureCount: number; style: any; interactive: any }[] = [];
+const demnasCoverageLog: { featureCount: number; style: any; interactive: any; onEachFeature: any }[] = [];
 const fitBoundsMock = vi.fn();
 const getBoundsMock = vi.fn();
 let moveEndHandler: (() => void) | null = null;
@@ -28,9 +28,9 @@ vi.mock("react-leaflet", () => ({
     <div data-testid="map-container">{children}</div>
   ),
   TileLayer: () => <div data-testid="tile-layer" />,
-  GeoJSON: ({ data, eventHandlers, style, interactive }: any) => {
+  GeoJSON: ({ data, eventHandlers, style, interactive, onEachFeature }: any) => {
     if (data.type === "FeatureCollection") {
-      demnasCoverageLog.push({ featureCount: data.features.length, style, interactive });
+      demnasCoverageLog.push({ featureCount: data.features.length, style, interactive, onEachFeature });
       return <div data-testid="demnas-coverage-layer" />;
     }
     const id = data.properties.id;
@@ -427,7 +427,7 @@ describe("DemnasCoverageLayer", () => {
     expect(screen.queryByTestId("demnas-coverage-layer")).not.toBeInTheDocument();
   });
 
-  it("renders every DEMNAS footprint as one merged, non-interactive layer", () => {
+  it("renders every DEMNAS footprint as one merged, clickable layer", () => {
     function DemnasFootprintsSeeder({ children }: { children: ReactNode }) {
       const gis = useGIS();
       useEffect(() => {
@@ -458,6 +458,42 @@ describe("DemnasCoverageLayer", () => {
     expect(screen.getByTestId("demnas-coverage-layer")).toBeInTheDocument();
     expect(demnasCoverageLog).toHaveLength(1);
     expect(demnasCoverageLog[0].featureCount).toBe(2);
-    expect(demnasCoverageLog[0].interactive).toBe(false);
+    expect(demnasCoverageLog[0].interactive).toBe(true);
+  });
+
+  it("wires each tile's popup with its preview image, filename, and BIG login download link", () => {
+    function DemnasFootprintsSeeder({ children }: { children: ReactNode }) {
+      const gis = useGIS();
+      useEffect(() => {
+        gis.setDemnasFootprints([
+          {
+            id: "1118-631",
+            productType: "DEMNAS_25K" as any,
+            footprint: { type: "Polygon", coordinates: [[[95, 4], [96, 4], [96, 5], [95, 5]]] },
+          },
+        ]);
+      }, []);
+      return <>{children}</>;
+    }
+
+    render(
+      <GISProvider>
+        <DemnasFootprintsSeeder>
+          <MapView />
+        </DemnasFootprintsSeeder>
+      </GISProvider>
+    );
+
+    const bindPopup = vi.fn();
+    const fakeLayer = { bindPopup, on: vi.fn(), setStyle: vi.fn() };
+    demnasCoverageLog[0].onEachFeature({ properties: { id: "1118-631" } }, fakeLayer);
+
+    expect(bindPopup).toHaveBeenCalledTimes(1);
+    const html = bindPopup.mock.calls[0][0];
+    expect(html).toContain("https://tanahair.indonesia.go.id/demnas/images/DEMNAS_1118-631.jpg");
+    expect(html).toContain("DEMNAS_1118-631_v1.0.tif");
+    expect(html).toContain(
+      "https://tanahair.indonesia.go.id/portal-web/login?page=/unduh/demnas&filename=DEMNAS_1118-631_v1.0.tif"
+    );
   });
 });
