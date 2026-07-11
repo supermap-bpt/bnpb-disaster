@@ -654,3 +654,56 @@ def test_search_endpoint_accepts_sentinel2_with_cloud_cover_max(client):
     )
     assert response.status_code == 200
     assert response.json() == {"results": [], "total": 0}
+
+
+@respx.mock
+def test_demnas_footprints_endpoint_returns_lean_unpaginated_items(client):
+    respx.get("https://demnas.test/demnas.json").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {"NAMOBJ": "1118-631", "SKALA": "25K"},
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [
+                                [
+                                    [95.0, 4.0, 0.0],
+                                    [96.0, 4.0, 0.0],
+                                    [96.0, 5.0, 0.0],
+                                    [95.0, 5.0, 0.0],
+                                    [95.0, 4.0, 0.0],
+                                ]
+                            ],
+                        },
+                    }
+                ],
+            },
+        )
+    )
+    response = client.get(
+        "/api/search/demnas-footprints",
+        params={
+            "productType": ["DEMNAS_25K"],
+            "aoi": "94.5,3.5,96.5,3.5,96.5,5.5,94.5,5.5",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "total": 1,
+        "items": [
+            {
+                "id": "1118-631",
+                "productType": "DEMNAS_25K",
+                "footprint": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [[95.0, 4.0], [96.0, 4.0], [96.0, 5.0], [95.0, 5.0], [95.0, 4.0]]
+                    ],
+                },
+            }
+        ],
+    }

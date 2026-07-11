@@ -75,6 +75,21 @@ class SearchResponse(BaseModel):
     total: int = Field(..., description="Total matching products at CDSE, which may exceed len(results).")
 
 
+class DemnasFootprintItem(BaseModel):
+    id: str
+    productType: ProductType
+    footprint: Footprint
+
+
+class DemnasFootprintsResponse(BaseModel):
+    # Deliberately lean - id/productType/footprint only, no name/sensingTime/
+    # size/etc. - since this endpoint returns every matching DEMNAS tile
+    # unpaginated (thousands, for the map's full-coverage overlay) rather
+    # than the paginated, fully-detailed SearchResultItem list /api/search returns.
+    items: list[DemnasFootprintItem]
+    total: int
+
+
 class GeocodeResponse(BaseModel):
     lat: float
     lng: float

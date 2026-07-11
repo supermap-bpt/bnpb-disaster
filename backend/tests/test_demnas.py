@@ -6,7 +6,7 @@ import app.services.demnas as demnas_module
 from app.config import Settings
 from app.models import ProductType, SearchQuery
 from app.services.cache import get_cached_attributes
-from app.services.demnas import search_demnas
+from app.services.demnas import list_demnas_footprints, search_demnas
 
 SAMPLE_COLLECTION = {
     "type": "FeatureCollection",
@@ -109,6 +109,59 @@ async def test_search_demnas_filters_by_skala(settings):
 
     ids = {item.id for item in result.results}
     assert ids == {"1118-631", "9999-999"}
+
+
+async def test_search_demnas_recognizes_skala_peta_field_as_an_alternate_scale_source(settings):
+    # Real DEMNAS data (verified live): only ~1223 of 4781 tiles use "SKALA"
+    # ("25K"/"50K"); ~2930 use "SKALA_PETA" instead ("1:25.000"/"1:50.000"),
+    # depending on which regional source layer a tile came from. Both must
+    # resolve to the same DEMNAS_25K/50K product types.
+    demnas_module._demnas_cache = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {
+                    "NAMOBJ": "3207-61",
+                    "REGION": "PAPUA",
+                    "SKALA_PETA": "1:50.000",
+                    "THN_DTM": "2011",
+                },
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [[95.0, 4.0, 0.0], [96.0, 4.0, 0.0], [96.0, 5.0, 0.0], [95.0, 5.0, 0.0], [95.0, 4.0, 0.0]]
+                    ],
+                },
+            },
+            {
+                "type": "Feature",
+                "properties": {
+                    "NAMOBJ": "3207-62",
+                    "REGION": "PAPUA",
+                    "SKALA_PETA": "1:25.000",
+                    "THN_DTM": "2011",
+                },
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [[95.0, 4.0, 0.0], [96.0, 4.0, 0.0], [96.0, 5.0, 0.0], [95.0, 5.0, 0.0], [95.0, 4.0, 0.0]]
+                    ],
+                },
+            },
+        ],
+    }
+    query = SearchQuery(
+        productType=[ProductType.DEMNAS_25K, ProductType.DEMNAS_50K],
+        dateFrom="2026-01-01",
+        dateUntil="2026-01-31",
+        aoi="94.5,3.5,96.5,3.5,96.5,5.5,94.5,5.5",
+    )
+
+    result = await search_demnas(query, settings)
+
+    by_id = {item.id: item.productType for item in result.results}
+    assert by_id == {"3207-61": ProductType.DEMNAS_50K, "3207-62": ProductType.DEMNAS_25K}
 
 
 async def test_search_demnas_filters_by_aoi_bbox_overlap(settings):
@@ -262,3 +315,43 @@ async def test_search_demnas_fetches_and_caches_the_remote_json(settings):
     await search_demnas(query, settings)
 
     assert route.call_count == 1
+
+
+async def test_list_demnas_footprints_returns_every_match_unpaginated(settings):
+    many_features = [
+        {
+            "type": "Feature",
+            "properties": {"NAMOBJ": f"tile-{i}", "NAME_FILE": f"tile-{i}.tif", "SKALA": "25K", "Tahun": "2010"},
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                    [[95.0, 4.0, 0.0], [96.0, 4.0, 0.0], [96.0, 5.0, 0.0], [95.0, 5.0, 0.0], [95.0, 4.0, 0.0]]
+                ],
+            },
+        }
+        for i in range(120)
+    ]
+    demnas_module._demnas_cache = {"type": "FeatureCollection", "features": many_features}
+
+    result = await list_demnas_footprints(
+        [ProductType.DEMNAS_25K], "94.5,3.5,96.5,3.5,96.5,5.5,94.5,5.5", settings
+    )
+
+    assert result.total == 120
+    assert len(result.items) == 120
+
+
+async def test_list_demnas_footprints_is_lean_and_still_filters_by_skala_and_aoi(settings):
+    demnas_module._demnas_cache = SAMPLE_COLLECTION
+
+    result = await list_demnas_footprints(
+        [ProductType.DEMNAS_25K], "94.5,3.5,96.5,3.5,96.5,5.5,94.5,5.5", settings
+    )
+
+    assert len(result.items) == 1
+    item = result.items[0]
+    assert item.id == "1118-631"
+    assert item.productType == ProductType.DEMNAS_25K
+    assert item.footprint.coordinates == [
+        [[95.0, 4.0], [96.0, 4.0], [96.0, 5.0], [95.0, 5.0], [95.0, 4.0]]
+    ]
