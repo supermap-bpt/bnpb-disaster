@@ -12,6 +12,7 @@ import {
 import { useGIS, type AoiRing, type SearchResultItem } from "../context/GISContext";
 import { fetchPreview, fetchSearch } from "../api/client";
 import { flattenFootprintPoints } from "@/lib/geometry";
+import { hasPreview } from "@/lib/satellite";
 
 const WST_VIEWPORT_RESEARCH_DEBOUNCE_MS = 500;
 
@@ -106,6 +107,11 @@ function SelectedProductSync() {
     if (!item) return;
 
     map.fitBounds(footprintBounds(item));
+
+    if (!hasPreview(item.productType)) {
+      setPreviewData(null);
+      return;
+    }
 
     let cancelled = false;
     setIsPreviewLoading(true);

@@ -243,6 +243,43 @@ describe("MapView", () => {
       "https://wms.test/process?access_token=tok"
     );
   });
+
+  it("zooms to the footprint but does not fetch a preview for a product type with no preview support (e.g. DEMNAS)", async () => {
+    const demnasItem: SearchResultItem = {
+      id: "demnas-1",
+      name: "DSMHYDRO_32BIT_1118-631.tif",
+      productType: "DEMNAS_25K" as any,
+      sensingTime: "2014-01-01T00:00:00Z",
+      size: "N/A",
+      polarisation: "N/A",
+      footprint: { type: "Polygon", coordinates: [[[95, 4], [98, 4], [98, 6], [95, 6]]] },
+    };
+    function DemnasResultsSeeder({ children }: { children: ReactNode }) {
+      const gis = useGIS();
+      useEffect(() => {
+        gis.setSearchResults([demnasItem], 1);
+      }, []);
+      return <>{children}</>;
+    }
+    fitBoundsMock.mockClear();
+    vi.mocked(fetchPreview).mockClear();
+
+    render(
+      <GISProvider>
+        <DemnasResultsSeeder>
+          <MapView />
+        </DemnasResultsSeeder>
+      </GISProvider>
+    );
+
+    act(() => geoJsonClickHandlers["demnas-1"]());
+
+    expect(fitBoundsMock).toHaveBeenCalledWith([
+      [4, 95],
+      [6, 98],
+    ]);
+    expect(fetchPreview).not.toHaveBeenCalled();
+  });
 });
 
 const WST_FILTER = {
