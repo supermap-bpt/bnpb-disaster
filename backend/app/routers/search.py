@@ -38,6 +38,7 @@ async def search(
     token_manager: TokenManager = Depends(_get_token_manager),
 ) -> SearchResponse:
     from app.services.catalogue import search_products
+    from app.services.demnas import search_demnas
 
     query = SearchQuery(
         productType=productType,
@@ -47,7 +48,10 @@ async def search(
         cloudCoverMax=cloudCoverMax,
         skip=skip,
     )
+    demnas_types = {ProductType.DEMNAS_25K, ProductType.DEMNAS_50K}
     try:
+        if any(pt in demnas_types for pt in query.productType):
+            return await search_demnas(query, settings)
         return await search_products(query, settings, token_manager)
     except httpx.HTTPStatusError as exc:
         raise HTTPException(status_code=502, detail="Catalogue upstream error") from exc

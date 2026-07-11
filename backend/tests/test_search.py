@@ -9,6 +9,7 @@ from app.services.cache import get_cached_attributes, get_cached_product_size, g
 from app.services.catalogue import (
     _aoi_to_polygon_wkt,
     build_odata_filter,
+    parse_wkt_footprint,
     parse_wkt_polygon,
     search_products,
 )
@@ -18,6 +19,30 @@ def test_parse_wkt_polygon_extracts_coordinate_pairs():
     wkt = "geography'SRID=4326;POLYGON((95.0 4.0, 98.0 4.0, 98.0 6.0, 95.0 6.0, 95.0 4.0))'"
     coords = parse_wkt_polygon(wkt)
     assert coords == [[[95.0, 4.0], [98.0, 4.0], [98.0, 6.0], [95.0, 6.0], [95.0, 4.0]]]
+
+
+def test_parse_wkt_footprint_returns_polygon_type_for_a_plain_polygon():
+    wkt = "geography'SRID=4326;POLYGON((95.0 4.0, 98.0 4.0, 98.0 6.0, 95.0 6.0, 95.0 4.0))'"
+    geometry_type, coordinates = parse_wkt_footprint(wkt)
+    assert geometry_type == "Polygon"
+    assert coordinates == [[[95.0, 4.0], [98.0, 4.0], [98.0, 6.0], [95.0, 6.0], [95.0, 4.0]]]
+
+
+def test_parse_wkt_footprint_returns_multipolygon_type_for_antimeridian_crossing_footprint():
+    # Real shape CDSE returns for footprints crossing the antimeridian (e.g.
+    # Sentinel-3 WST's near-global, near-polar swaths) - two separate rings,
+    # one either side of the 180th meridian.
+    wkt = (
+        "geography'SRID=4326;MULTIPOLYGON ("
+        "((180 -83.1, 180 -61.6, 172.7 -81.7, 180 -83.1)), "
+        "((-180 -61.6, -180 -83.1, -179.4 -83.2, -180 -61.6)))'"
+    )
+    geometry_type, coordinates = parse_wkt_footprint(wkt)
+    assert geometry_type == "MultiPolygon"
+    assert coordinates == [
+        [[[180.0, -83.1], [180.0, -61.6], [172.7, -81.7], [180.0, -83.1]]],
+        [[[-180.0, -61.6], [-180.0, -83.1], [-179.4, -83.2], [-180.0, -61.6]]],
+    ]
 
 
 def test_aoi_to_polygon_wkt_builds_closed_rectangle_from_bbox_corners():
@@ -587,6 +612,26 @@ def test_search_endpoint_rejects_cloud_cover_max_above_100(client):
         },
     )
     assert response.status_code == 422
+
+
+@respx.mock
+def test_search_endpoint_dispatches_to_demnas_for_demnas_product_types(client):
+    respx.get("https://demnas.test/demnas.json").mock(
+        return_value=httpx.Response(200, json={"type": "FeatureCollection", "features": []})
+    )
+
+    response = client.get(
+        "/api/search",
+        params={
+            "productType": ["DEMNAS_25K"],
+            "dateFrom": "2026-01-01",
+            "dateUntil": "2026-01-31",
+            "aoi": "95.0,4.0,98.0,4.0,98.0,6.0,95.0,6.0",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"results": [], "total": 0}
 
 
 @respx.mock
