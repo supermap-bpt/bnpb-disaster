@@ -19,6 +19,11 @@ def test_product_type_accepts_sentinel3_values():
     assert ProductType("SENTINEL_3_SLSTR_L2_WST") == ProductType.S3_SLSTR_L2_WST
 
 
+def test_product_type_accepts_demnas_values():
+    assert ProductType("DEMNAS_25K") == ProductType.DEMNAS_25K
+    assert ProductType("DEMNAS_50K") == ProductType.DEMNAS_50K
+
+
 def test_product_type_rejects_unknown_value():
     with pytest.raises(ValueError):
         ProductType("SENTINEL_3_FOO")

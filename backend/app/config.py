@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     # endpoint does not accept (root cause of the old broken Preview).
     cdse_process_url: str = "https://sh.dataspace.copernicus.eu/api/v1/process"
     nominatim_url: str = "https://nominatim.openstreetmap.org/search"
+    demnas_url: str = "https://tanahair.indonesia.go.id/portal-web/demnas.json"
     # Plain str, not list[str]: pydantic-settings tries json.loads() on any
     # list-typed env var before validators run, and .env stores this as a
     # plain comma-separated string (CORS_ORIGINS=http://localhost:5173,...).
