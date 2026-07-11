@@ -1,7 +1,7 @@
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useEffect, type ReactNode } from "react";
-import { GISProvider, useGIS } from "../context/GISContext";
+import { GISProvider, useGIS, type SearchResultItem } from "../context/GISContext";
 
 const geoJsonClickHandlers: Record<string, () => void> = {};
 const geoJsonHoverHandlers: Record<string, { mouseover?: () => void; mouseout?: () => void }> = {};
