@@ -44,7 +44,10 @@ class SearchQuery(BaseModel):
 
 class Footprint(BaseModel):
     type: str = Field(default="Polygon")
-    coordinates: list[list[list[float]]]
+    # Polygon: [ring]. MultiPolygon: [[ring], [ring], ...] - CDSE returns
+    # MULTIPOLYGON for footprints crossing the antimeridian (observed for
+    # Sentinel-3 WST's near-global, near-polar swaths).
+    coordinates: list[list[list[float]]] | list[list[list[list[float]]]]
 
 
 class SearchResultItem(BaseModel):

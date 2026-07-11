@@ -138,13 +138,33 @@ def build_odata_filter(query: SearchQuery) -> str:
     return " or ".join(branches)
 
 
-def parse_wkt_polygon(wkt: str) -> list[list[list[float]]]:
-    match = re.search(r"POLYGON\s*\(\((.*?)\)\)", wkt)
-    if not match:
+def _extract_wkt_rings(wkt: str) -> list[list[list[float]]]:
+    # Finds every leaf coordinate ring "(...)" regardless of nesting depth -
+    # works for POLYGON's single ring and for MULTIPOLYGON's per-polygon ring
+    # alike (these footprints never have holes, so every leaf group found
+    # this way is an exterior ring, never an inner hole).
+    rings_raw = re.findall(r"\(([^()]+)\)", wkt)
+    if not rings_raw:
         raise ValueError(f"Unsupported footprint WKT: {wkt}")
-    pairs = match.group(1).split(",")
-    ring = [[float(x), float(y)] for x, y in (pair.split() for pair in pairs)]
-    return [ring]
+    return [
+        [[float(x), float(y)] for x, y in (pair.split() for pair in ring.split(","))]
+        for ring in rings_raw
+    ]
+
+
+def parse_wkt_polygon(wkt: str) -> list[list[list[float]]]:
+    return [_extract_wkt_rings(wkt)[0]]
+
+
+def parse_wkt_footprint(wkt: str) -> tuple[str, list]:
+    # CDSE returns MULTIPOLYGON (rather than POLYGON) for footprints that
+    # cross the antimeridian - observed for Sentinel-3 WST's near-global,
+    # near-polar swaths. Splitting on that gives the correct GeoJSON shape
+    # for either case: Polygon -> [ring]; MultiPolygon -> [[ring], [ring], ...].
+    rings = _extract_wkt_rings(wkt)
+    if "MULTIPOLYGON" in wkt.upper():
+        return "MultiPolygon", [[ring] for ring in rings]
+    return "Polygon", [rings[0]]
 
 
 def _attr_value(attributes: list[dict], name: str, default: str = "") -> str:
@@ -251,6 +271,7 @@ async def search_products(
         attributes = entry.get("Attributes", [])
 
         raw_product_type = _attr_value(attributes, "productType")
+        footprint_type, footprint_coordinates = parse_wkt_footprint(entry["Footprint"])
 
         item = SearchResultItem(
             id=entry["Id"],
@@ -260,9 +281,7 @@ async def search_products(
             size=_to_human_size(entry["ContentLength"]),
             polarisation=_attr_value(attributes, "polarisationChannels", "N/A"),
             cloudCoverPercentage=_cloud_cover_from_attributes(attributes),
-            footprint=Footprint(
-                coordinates=parse_wkt_polygon(entry["Footprint"])
-            ),
+            footprint=Footprint(type=footprint_type, coordinates=footprint_coordinates),
         )
 
         cache_footprint(item.id, item.footprint)
