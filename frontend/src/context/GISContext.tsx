@@ -34,6 +34,15 @@ export interface PreviewData {
   bounds: [[number, number], [number, number]];
 }
 
+/** Lean footprint-only shape for the map's full DEMNAS coverage overlay -
+ * every matching tile, unpaginated, unlike the Sidebar's paginated
+ * SearchResultItem list. */
+export interface DemnasFootprintItem {
+  id: string;
+  productType: ProductType;
+  footprint: Footprint;
+}
+
 /** [lon, lat] ring for the geocoded place's AOI (administrative boundary
  * polygon if Nominatim has one, else its bounding-box rectangle). */
 export type AoiRing = [number, number][];
@@ -51,6 +60,7 @@ interface GISContextValue {
   geocodeResult: GeocodeResult | null;
   searchResults: SearchResultItem[];
   searchTotal: number;
+  demnasFootprints: DemnasFootprintItem[];
   selectedProductId: string | null;
   hoveredProductId: string | null;
   previewData: PreviewData | null;
@@ -65,6 +75,7 @@ interface GISContextValue {
   setAddressQuery: (value: string) => void;
   setSearchResults: (results: SearchResultItem[], total: number) => void;
   appendSearchResults: (results: SearchResultItem[], total: number) => void;
+  setDemnasFootprints: (items: DemnasFootprintItem[]) => void;
   selectProduct: (productId: string | null) => void;
   setHoveredProductId: (productId: string | null) => void;
   setPreviewData: (data: PreviewData | null) => void;
@@ -82,6 +93,7 @@ export function GISProvider({ children }: { children: ReactNode }) {
   const [geocodeResult, setGeocodeResult] = useState<GeocodeResult | null>(null);
   const [searchResults, setSearchResultsState] = useState<SearchResultItem[]>([]);
   const [searchTotal, setSearchTotal] = useState(0);
+  const [demnasFootprints, setDemnasFootprints] = useState<DemnasFootprintItem[]>([]);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [hoveredProductId, setHoveredProductId] = useState<string | null>(null);
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
@@ -116,6 +128,7 @@ export function GISProvider({ children }: { children: ReactNode }) {
     setAddressQuery("");
     setSearchResultsState([]);
     setSearchTotal(0);
+    setDemnasFootprints([]);
     setSelectedProductId(null);
     setPreviewData(null);
     setLastSearchFilter(null);
@@ -128,6 +141,7 @@ export function GISProvider({ children }: { children: ReactNode }) {
       geocodeResult,
       searchResults,
       searchTotal,
+      demnasFootprints,
       selectedProductId,
       hoveredProductId,
       previewData,
@@ -142,6 +156,7 @@ export function GISProvider({ children }: { children: ReactNode }) {
       setAddressQuery,
       setSearchResults,
       appendSearchResults,
+      setDemnasFootprints,
       selectProduct,
       setHoveredProductId,
       setPreviewData,
@@ -156,6 +171,7 @@ export function GISProvider({ children }: { children: ReactNode }) {
       geocodeResult,
       searchResults,
       searchTotal,
+      demnasFootprints,
       selectedProductId,
       hoveredProductId,
       previewData,

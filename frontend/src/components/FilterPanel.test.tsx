@@ -364,7 +364,7 @@ describe("FilterPanel", () => {
     expect(screen.getByLabelText(/level 1-grd/i)).not.toBeChecked();
   });
 
-  it("submits DEMNAS product types when their checkboxes are checked", async () => {
+  it("submits DEMNAS product types without requiring a date range", async () => {
     vi.mocked(fetchSearch).mockResolvedValue({ results: [], total: 0 });
 
     render(
@@ -380,21 +380,55 @@ describe("FilterPanel", () => {
     expandGroup(/expand demnas/i);
     expandGroup(/expand skala/i);
     fireEvent.click(screen.getByLabelText(/^25k$/i));
-    pickDate(/^dari$/i, 2026, 0, 1);
-    pickDate(/^sampai$/i, 2026, 1, 1);
     fireEvent.click(screen.getByRole("button", { name: /^cari$/i }));
 
     await waitFor(() => expect(fetchSearch).toHaveBeenCalled());
     expect(fetchSearch).toHaveBeenCalledWith(
-      {
-        productType: ["DEMNAS_25K"],
-        cloudCoverMax: 100,
-        dateFrom: "2026-01-01",
-        dateUntil: "2026-02-01",
-      },
+      expect.objectContaining({ productType: ["DEMNAS_25K"], cloudCoverMax: 100 }),
       SAMPLE_PLACE,
       0
     );
+  });
+
+  it("disables the date pickers and shows no validation error when DEMNAS is the only selection", async () => {
+    render(
+      <Providers>
+        <WithPlace ring={SAMPLE_PLACE}>
+          <FilterPanel />
+        </WithPlace>
+      </Providers>
+    );
+
+    expandGroup(/expand demnas/i);
+    expandGroup(/expand skala/i);
+    fireEvent.click(screen.getByLabelText(/^25k$/i));
+
+    expect(screen.getByLabelText(/^dari$/i)).toBeDisabled();
+    expect(screen.getByLabelText(/^sampai$/i)).toBeDisabled();
+  });
+
+  it("re-enables the date pickers and requires them again once a Sentinel leaf is checked instead", async () => {
+    render(
+      <Providers>
+        <WithPlace ring={SAMPLE_PLACE}>
+          <FilterPanel />
+        </WithPlace>
+      </Providers>
+    );
+
+    expandGroup(/expand demnas/i);
+    expandGroup(/expand skala/i);
+    fireEvent.click(screen.getByLabelText(/^25k$/i));
+    expect(screen.getByLabelText(/^dari$/i)).toBeDisabled();
+
+    expandGroup(/expand sentinel-1/i);
+    expandGroup(/expand c-sar/i);
+    fireEvent.click(screen.getByLabelText(/level 1-grd/i));
+
+    expect(screen.getByLabelText(/^dari$/i)).not.toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /^cari$/i }));
+
+    expect(await screen.findAllByText(/wajib diisi/i)).toHaveLength(2);
   });
 
   it("cloud cover slider is disabled until a Sentinel-2 leaf is checked", async () => {

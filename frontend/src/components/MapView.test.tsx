@@ -6,6 +6,7 @@ import { GISProvider, useGIS, type SearchResultItem } from "../context/GISContex
 const geoJsonClickHandlers: Record<string, () => void> = {};
 const geoJsonHoverHandlers: Record<string, { mouseover?: () => void; mouseout?: () => void }> = {};
 const geoJsonStyleLog: Record<string, any> = {};
+const demnasCoverageLog: { featureCount: number; style: any; interactive: any }[] = [];
 const fitBoundsMock = vi.fn();
 const getBoundsMock = vi.fn();
 let moveEndHandler: (() => void) | null = null;
@@ -27,7 +28,11 @@ vi.mock("react-leaflet", () => ({
     <div data-testid="map-container">{children}</div>
   ),
   TileLayer: () => <div data-testid="tile-layer" />,
-  GeoJSON: ({ data, eventHandlers, style }: any) => {
+  GeoJSON: ({ data, eventHandlers, style, interactive }: any) => {
+    if (data.type === "FeatureCollection") {
+      demnasCoverageLog.push({ featureCount: data.features.length, style, interactive });
+      return <div data-testid="demnas-coverage-layer" />;
+    }
     const id = data.properties.id;
     if (eventHandlers?.click) geoJsonClickHandlers[id] = eventHandlers.click;
     if (id && (eventHandlers?.mouseover || eventHandlers?.mouseout)) {
@@ -70,6 +75,7 @@ beforeEach(() => {
   vi.mocked(fetchSearch).mockReset();
   getBoundsMock.mockReset();
   moveEndHandler = null;
+  demnasCoverageLog.length = 0;
 });
 
 describe("aoiRingToBounds", () => {
@@ -407,5 +413,51 @@ describe("Sentinel-3 WST viewport re-search", () => {
     });
 
     expect(fetchSearch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("DemnasCoverageLayer", () => {
+  it("renders nothing when there are no DEMNAS footprints", () => {
+    render(
+      <GISProvider>
+        <MapView />
+      </GISProvider>
+    );
+
+    expect(screen.queryByTestId("demnas-coverage-layer")).not.toBeInTheDocument();
+  });
+
+  it("renders every DEMNAS footprint as one merged, non-interactive layer", () => {
+    function DemnasFootprintsSeeder({ children }: { children: ReactNode }) {
+      const gis = useGIS();
+      useEffect(() => {
+        gis.setDemnasFootprints([
+          {
+            id: "tile-1",
+            productType: "DEMNAS_25K" as any,
+            footprint: { type: "Polygon", coordinates: [[[95, 4], [96, 4], [96, 5], [95, 5]]] },
+          },
+          {
+            id: "tile-2",
+            productType: "DEMNAS_50K" as any,
+            footprint: { type: "Polygon", coordinates: [[[96, 4], [97, 4], [97, 5], [96, 5]]] },
+          },
+        ]);
+      }, []);
+      return <>{children}</>;
+    }
+
+    render(
+      <GISProvider>
+        <DemnasFootprintsSeeder>
+          <MapView />
+        </DemnasFootprintsSeeder>
+      </GISProvider>
+    );
+
+    expect(screen.getByTestId("demnas-coverage-layer")).toBeInTheDocument();
+    expect(demnasCoverageLog).toHaveLength(1);
+    expect(demnasCoverageLog[0].featureCount).toBe(2);
+    expect(demnasCoverageLog[0].interactive).toBe(false);
   });
 });

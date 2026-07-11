@@ -1,5 +1,12 @@
-import type { FilterFormValues } from "../schemas/filterSchema";
-import type { AoiRing, Footprint, GeocodeResult, PreviewData, SearchResultItem } from "../context/GISContext";
+import type { FilterFormValues, ProductType } from "../schemas/filterSchema";
+import type {
+  AoiRing,
+  DemnasFootprintItem,
+  Footprint,
+  GeocodeResult,
+  PreviewData,
+  SearchResultItem,
+} from "../context/GISContext";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -40,6 +47,28 @@ export async function fetchSearch(
   const url = `${API_BASE_URL}/api/search?${params.toString()}`;
   const response = await fetch(url);
   return parseJsonOrThrow<SearchResult>(response);
+}
+
+export interface DemnasFootprintsResult {
+  items: DemnasFootprintItem[];
+  total: number;
+}
+
+/** Every matching DEMNAS tile's footprint, unpaginated - for the map's full
+ * coverage overlay. Ignores date range (DEMNAS has none) and cloud cover
+ * (not applicable). */
+export async function fetchDemnasFootprints(
+  productType: ProductType[],
+  aoiRing: AoiRing
+): Promise<DemnasFootprintsResult> {
+  const params = new URLSearchParams();
+  for (const type of productType) {
+    params.append("productType", type);
+  }
+  params.set("aoi", aoiRing.flat().join(","));
+  const url = `${API_BASE_URL}/api/search/demnas-footprints?${params.toString()}`;
+  const response = await fetch(url);
+  return parseJsonOrThrow<DemnasFootprintsResult>(response);
 }
 
 export async function fetchPreview(productId: string): Promise<PreviewData> {

@@ -71,6 +71,40 @@ export function footprintStyle(isSelected: boolean, isHovered: boolean) {
   return { color: "#3b82f6", weight: 1, fillOpacity: 0.08 };
 }
 
+/** DEMNAS's full matching-tile coverage grid (can be thousands of tiles),
+ * drawn as one merged, non-interactive layer - unlike FootprintLayers below,
+ * which renders one clickable/selectable GeoJSON per currently-loaded Sidebar
+ * card. Only the current page's cards are individually interactive, since
+ * only they have full backend-cached data for View on Map/Info/Save. */
+function DemnasCoverageLayer() {
+  const { demnasFootprints } = useGIS();
+
+  console.log("DEMNAS footprints:", demnasFootprints.length);
+
+  if (demnasFootprints.length === 0) return null;
+
+  const featureCollection = {
+    type: "FeatureCollection",
+    features: demnasFootprints.map((item) => ({
+      type: "Feature",
+      properties: { id: item.id },
+      geometry: item.footprint,
+    })),
+  };
+
+  console.log("GeoJSON features:", featureCollection.features.length);
+  console.log("First feature:", featureCollection.features[0]);
+
+  return (
+    <GeoJSON
+      key={`${demnasFootprints.length}-${demnasFootprints[0]?.id}-${demnasFootprints[demnasFootprints.length - 1]?.id}`}
+      data={featureCollection as any}
+      interactive={false}
+      style={{ color: "#60a5fa", weight: 1, fillOpacity: 0.02 }}
+    />
+  );
+}
+
 function FootprintLayers() {
   const { searchResults, selectedProductId, hoveredProductId, selectProduct, setHoveredProductId } =
     useGIS();
@@ -210,6 +244,7 @@ function MapView() {
       <ZoomControl position="bottomright" />
       <FitBoundsToPlace />
       <AoiLayer />
+      <DemnasCoverageLayer />
       <FootprintLayers />
       <SelectedProductSync />
       <PreviewLayer />

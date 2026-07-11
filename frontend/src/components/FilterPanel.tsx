@@ -3,9 +3,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { CalendarIcon, ChevronDown, Cloud } from "lucide-react";
 import { format, parseISO } from "date-fns";
-import { filterSchema, type FilterFormValues } from "../schemas/filterSchema";
+import { filterSchema, isDemnasOnly, type FilterFormValues } from "../schemas/filterSchema";
 import { useGIS, INDONESIA_BBOX } from "../context/GISContext";
-import { fetchSearch } from "../api/client";
+import { fetchDemnasFootprints, fetchSearch } from "../api/client";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -88,12 +88,14 @@ export function DateField({
   placeholder,
   value,
   onChange,
+  disabled,
 }: {
   id: string;
   label: string;
   placeholder: string;
   value: string;
   onChange: (value: string) => void;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -102,12 +104,13 @@ export function DateField({
       <label className="text-sm font-medium" htmlFor={id}>
         {label}
       </label>
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open && !disabled} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
             id={id}
             type="button"
             variant="outline"
+            disabled={disabled}
             className={cn("justify-start text-left font-normal", !value && "text-muted-foreground")}
           >
             <CalendarIcon className="mr-2 h-4 w-4" />
@@ -178,6 +181,7 @@ function FilterPanel() {
     addressQuery,
     setPlaceRing,
     setSearchResults,
+    setDemnasFootprints,
     setLastSearchFilter,
     isSearching,
     setIsSearching,
@@ -201,6 +205,7 @@ function FilterPanel() {
     setOpenGroups((prev) => ({ ...prev, [id]: !isGroupOpen(id) }));
   const productTypeWatch = useWatch({ control, name: "productType" });
   const hasSentinel2Checked = (productTypeWatch ?? []).some((value) => value.startsWith("SENTINEL_2"));
+  const demnasOnly = isDemnasOnly(productTypeWatch ?? []);
 
   const onSubmit = async (values: FilterFormValues) => {
     const aoiRing = addressQuery.trim() === "" ? INDONESIA_BBOX : placeRing;
@@ -208,13 +213,31 @@ function FilterPanel() {
       setError(t("noAoiError"));
       return;
     }
+    // DEMNAS ignores the date range entirely (fixed historical baseline) - the
+    // backend still requires valid date query params structurally, so substitute
+    // a placeholder range rather than making the user pick dates that do nothing.
+    const submittedValues = demnasOnly
+      ? { ...values, dateFrom: "2000-01-01", dateUntil: format(new Date(), "yyyy-MM-dd") }
+      : values;
     setError(null);
     setIsSearching(true);
     try {
-      const { results, total } = await fetchSearch(values, aoiRing, 0);
+      const { results, total } = await fetchSearch(submittedValues, aoiRing, 0);
       setPlaceRing(aoiRing);
-      setLastSearchFilter(values);
+      // Store the submitted (fallback-substituted) values, not the raw form
+      // values - Sidebar's "Load More" reuses lastSearchFilter for pagination
+      // and would otherwise resend empty date strings on every subsequent page.
+      setLastSearchFilter(submittedValues);
       setSearchResults(results, total);
+      // DEMNAS's map coverage overlay draws every matching tile at once (the
+      // Sidebar list stays paginated above) - other data sources have no such
+      // overlay, so clear it whenever a non-DEMNAS search runs.
+      if (demnasOnly) {
+        const { items } = await fetchDemnasFootprints(submittedValues.productType, aoiRing);
+        setDemnasFootprints(items);
+      } else {
+        setDemnasFootprints([]);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : t("searchFailed"));
     } finally {
@@ -329,6 +352,7 @@ function FilterPanel() {
               placeholder={t("pickDate")}
               value={field.value}
               onChange={field.onChange}
+              disabled={demnasOnly}
             />
           )}
         />
@@ -341,6 +365,7 @@ function FilterPanel() {
               label={t("dateUntil")}
               placeholder={t("pickDate")}
               value={field.value}
+              disabled={demnasOnly}
               onChange={field.onChange}
             />
           )}

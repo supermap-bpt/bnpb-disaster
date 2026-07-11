@@ -44,7 +44,7 @@ export const translations = {
 
     // Title Find Satellite
     findSatelliteTitle: "Cari Satelit",
-    findSatelliteSubtitle: "Cari & simpan citra Sentinel-1 berdasarkan lokasi dan tanggal.",
+    findSatelliteSubtitle: "Cari & simpan berdasarkan lokasi dan tanggal.",
 
     // Sidebar
     searchResults: "Hasil Pencarian",
@@ -59,6 +59,7 @@ export const translations = {
     dateFrom: "Dari",
     dateUntil: "Sampai",
     pickDate: "Pilih tanggal",
+    dateNotNeededForDemnas: "Tidak diperlukan untuk DEMNAS",
     search: "Cari",
     searching: "Mencari...",
     resetMap: "Reset Map",
@@ -216,7 +217,7 @@ export const translations = {
 
     // Title Find Satellite
     findSatelliteTitle: "Find Satellite",
-    findSatelliteSubtitle: "Search & save Sentinel-1 imagery by location and date.",
+    findSatelliteSubtitle: "Search & save by location and date.",
 
     // Sidebar
     searchResults: "Search Results",
@@ -231,6 +232,7 @@ export const translations = {
     dateFrom: "From",
     dateUntil: "Until",
     pickDate: "Pick a date",
+    dateNotNeededForDemnas: "Not needed for DEMNAS",
     search: "Search",
     searching: "Searching...",
     resetMap: "Reset Map",
