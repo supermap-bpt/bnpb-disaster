@@ -90,6 +90,7 @@ export function DateField({
             captionLayout="dropdown"
             startMonth={CALENDAR_START_MONTH}
             endMonth={CALENDAR_END_MONTH}
+            defaultMonth={value ? parseISO(value) : undefined}
             selected={value ? parseISO(value) : undefined}
             onSelect={(date) => {
               if (!date) return;
@@ -103,7 +104,7 @@ export function DateField({
   );
 }
 
-const DEFAULT_FORM_VALUES: FilterFormValues = { productType: ["SENTINEL_1_GRD"], cloudCoverMax: 100, dateFrom: "", dateUntil: "" };
+const DEFAULT_FORM_VALUES: FilterFormValues = { productType: [], cloudCoverMax: 100, dateFrom: "", dateUntil: "" };
 
 function TreeNode({
   id,
@@ -165,7 +166,7 @@ function FilterPanel() {
     defaultValues: DEFAULT_FORM_VALUES,
   });
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
-  const isGroupOpen = (id: string) => openGroups[id] ?? true;
+  const isGroupOpen = (id: string) => openGroups[id] ?? false;
   const toggleGroupOpen = (id: string) =>
     setOpenGroups((prev) => ({ ...prev, [id]: !isGroupOpen(id) }));
   const productTypeWatch = useWatch({ control, name: "productType" });
@@ -250,30 +251,34 @@ function FilterPanel() {
                           </label>
                         );
                       })}
+                      {group.id === "sentinel-2" && (
+                        <Controller
+                          control={control}
+                          name="cloudCoverMax"
+                          render={({ field: cloudField }) => (
+                            <div className="flex items-center gap-2 pt-1">
+                              <Cloud className="h-4 w-4 shrink-0 text-muted-foreground" />
+                              <Slider
+                                min={0}
+                                max={100}
+                                step={1}
+                                value={[cloudField.value]}
+                                onValueChange={([next]) => cloudField.onChange(next)}
+                                disabled={!hasSentinel2Checked}
+                                className="flex-1"
+                              />
+                              <span className="w-9 shrink-0 text-right text-xs text-muted-foreground">
+                                {cloudField.value}%
+                              </span>
+                            </div>
+                          )}
+                        />
+                      )}
                     </TreeNode>
                   </TreeNode>
                 );
               })}
             </>
-          )}
-        />
-        <Controller
-          control={control}
-          name="cloudCoverMax"
-          render={({ field }) => (
-            <div className="flex items-center gap-2 pl-5">
-              <Cloud className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <Slider
-                min={0}
-                max={100}
-                step={1}
-                value={[field.value]}
-                onValueChange={([next]) => field.onChange(next)}
-                disabled={!hasSentinel2Checked}
-                className="flex-1"
-              />
-              <span className="w-9 shrink-0 text-right text-xs text-muted-foreground">{field.value}%</span>
-            </div>
           )}
         />
       </fieldset>
@@ -332,6 +337,7 @@ function FilterPanel() {
         onClick={() => {
           resetAll();
           reset(DEFAULT_FORM_VALUES);
+          setOpenGroups({});
         }}
       >
         {t("resetMap")}
