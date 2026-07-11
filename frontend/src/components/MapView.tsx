@@ -12,7 +12,7 @@ import {
 import { useGIS, type AoiRing, type SearchResultItem } from "../context/GISContext";
 import { fetchPreview, fetchSearch } from "../api/client";
 import { flattenFootprintPoints } from "@/lib/geometry";
-import { getDemnasLoginDownloadUrl, getDemnasPreviewImageUrl, hasPreview } from "@/lib/satellite";
+import { getDemnasFilename, getDemnasLoginDownloadUrl, getDemnasPreviewImageUrl, hasPreview } from "@/lib/satellite";
 
 const WST_VIEWPORT_RESEARCH_DEBOUNCE_MS = 500;
 
@@ -81,9 +81,13 @@ export function footprintStyle(isSelected: boolean, isHovered: boolean) {
 const DEMNAS_TILE_STYLE = { color: "#60a5fa", weight: 1, fillOpacity: 0.02 };
 const DEMNAS_TILE_HOVER_STYLE = { color: "#3b82f6", weight: 2, fillOpacity: 0.12 };
 
+/** Plain HTML (not JSX) because Leaflet popups render outside React's tree -
+ * bindPopup takes a DOM node or HTML string, not a component. `id` is safe to
+ * interpolate raw: it's BIG's own DEMNAS tile catalog grid code (backend
+ * data, never end-user input), not a value that needs escaping. */
 function buildDemnasPopupHtml(id: string): string {
   const previewUrl = getDemnasPreviewImageUrl(id);
-  const filename = `DEMNAS_${id}_v1.0.tif`;
+  const filename = getDemnasFilename(id);
   const downloadUrl = getDemnasLoginDownloadUrl(id);
   return `
     <div style="display:flex;flex-direction:column;gap:6px;min-width:160px;">

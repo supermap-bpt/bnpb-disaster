@@ -14,9 +14,15 @@ export function getDemnasPreviewImageUrl(id: string): string {
   return `https://tanahair.indonesia.go.id/demnas/images/DEMNAS_${id}.jpg`;
 }
 
+// Assumed universal (no per-tile version variation observed) - see the
+// design spec's "Open Assumption" note. Shared so the popup's displayed
+// filename can never drift from the actual download link's filename param.
+export function getDemnasFilename(id: string): string {
+  return `DEMNAS_${id}_v1.0.tif`;
+}
+
 export function getDemnasLoginDownloadUrl(id: string): string {
-  const filename = `DEMNAS_${id}_v1.0.tif`;
-  return `https://tanahair.indonesia.go.id/portal-web/login?page=/unduh/demnas&filename=${encodeURIComponent(filename)}`;
+  return `https://tanahair.indonesia.go.id/portal-web/login?page=/unduh/demnas&filename=${encodeURIComponent(getDemnasFilename(id))}`;
 }
 
 export function getMission(productType: string): string {
