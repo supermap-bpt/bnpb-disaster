@@ -298,6 +298,105 @@ describe("FilterPanel", () => {
     );
   });
 
+  it("checking a DEMNAS leaf clears any checked Sentinel leaves", async () => {
+    render(
+      <Providers>
+        <WithPlace ring={SAMPLE_PLACE}>
+          <FilterPanel />
+        </WithPlace>
+      </Providers>
+    );
+
+    expandGroup(/expand sentinel-1/i);
+    expandGroup(/expand c-sar/i);
+    fireEvent.click(screen.getByLabelText(/level 1-grd/i));
+    expect(screen.getByLabelText(/level 1-grd/i)).toBeChecked();
+
+    expandGroup(/expand demnas/i);
+    expandGroup(/expand skala/i);
+    fireEvent.click(screen.getByLabelText(/^25k$/i));
+
+    expect(screen.getByLabelText(/^25k$/i)).toBeChecked();
+    expect(screen.getByLabelText(/level 1-grd/i)).not.toBeChecked();
+  });
+
+  it("checking a Sentinel leaf clears any checked DEMNAS leaves", async () => {
+    render(
+      <Providers>
+        <WithPlace ring={SAMPLE_PLACE}>
+          <FilterPanel />
+        </WithPlace>
+      </Providers>
+    );
+
+    expandGroup(/expand demnas/i);
+    expandGroup(/expand skala/i);
+    fireEvent.click(screen.getByLabelText(/^25k$/i));
+    expect(screen.getByLabelText(/^25k$/i)).toBeChecked();
+
+    expandGroup(/expand sentinel-1/i);
+    expandGroup(/expand c-sar/i);
+    fireEvent.click(screen.getByLabelText(/level 1-grd/i));
+
+    expect(screen.getByLabelText(/level 1-grd/i)).toBeChecked();
+    expect(screen.getByLabelText(/^25k$/i)).not.toBeChecked();
+  });
+
+  it("checking the DEMNAS group checks both Skala leaves and clears Sentinel selections", async () => {
+    render(
+      <Providers>
+        <WithPlace ring={SAMPLE_PLACE}>
+          <FilterPanel />
+        </WithPlace>
+      </Providers>
+    );
+
+    expandGroup(/expand sentinel-1/i);
+    expandGroup(/expand c-sar/i);
+    fireEvent.click(screen.getByLabelText(/level 1-grd/i));
+
+    expandGroup(/expand demnas/i);
+    expandGroup(/expand skala/i);
+    fireEvent.click(screen.getByLabelText(/^demnas$/i));
+
+    expect(screen.getByLabelText(/^25k$/i)).toBeChecked();
+    expect(screen.getByLabelText(/^50k$/i)).toBeChecked();
+    expect(screen.getByLabelText(/level 1-grd/i)).not.toBeChecked();
+  });
+
+  it("submits DEMNAS product types when their checkboxes are checked", async () => {
+    vi.mocked(fetchSearch).mockResolvedValue({ results: [], total: 0 });
+
+    render(
+      <Providers>
+        <WithPlace ring={SAMPLE_PLACE}>
+          <WithAddressQuery query="Somewhere, Indonesia">
+            <FilterPanel />
+          </WithAddressQuery>
+        </WithPlace>
+      </Providers>
+    );
+
+    expandGroup(/expand demnas/i);
+    expandGroup(/expand skala/i);
+    fireEvent.click(screen.getByLabelText(/^25k$/i));
+    pickDate(/^dari$/i, 2026, 0, 1);
+    pickDate(/^sampai$/i, 2026, 1, 1);
+    fireEvent.click(screen.getByRole("button", { name: /^cari$/i }));
+
+    await waitFor(() => expect(fetchSearch).toHaveBeenCalled());
+    expect(fetchSearch).toHaveBeenCalledWith(
+      {
+        productType: ["DEMNAS_25K"],
+        cloudCoverMax: 100,
+        dateFrom: "2026-01-01",
+        dateUntil: "2026-02-01",
+      },
+      SAMPLE_PLACE,
+      0
+    );
+  });
+
   it("cloud cover slider is disabled until a Sentinel-2 leaf is checked", async () => {
     render(
       <Providers>

@@ -20,6 +20,7 @@ const CALENDAR_END_MONTH = new Date(new Date().getFullYear() + 1, 11, 1);
 const SATELLITE_GROUPS = [
   {
     id: "sentinel-1",
+    family: "sentinel",
     label: "Sentinel-1",
     sensorId: "c-sar",
     sensorLabel: "C-SAR",
@@ -30,6 +31,7 @@ const SATELLITE_GROUPS = [
   },
   {
     id: "sentinel-2",
+    family: "sentinel",
     label: "Sentinel-2",
     sensorId: "msi",
     sensorLabel: "MSI",
@@ -40,6 +42,7 @@ const SATELLITE_GROUPS = [
   },
   {
     id: "sentinel-3",
+    family: "sentinel",
     label: "Sentinel-3",
     sensorId: "slstr",
     sensorLabel: "SLSTR",
@@ -48,9 +51,36 @@ const SATELLITE_GROUPS = [
       { value: "SENTINEL_3_SLSTR_L2_WST", label: "Level-2 WST" },
     ],
   },
+  {
+    id: "demnas",
+    family: "demnas",
+    label: "DEMNAS",
+    sensorId: "demnas-skala",
+    sensorLabel: "Skala",
+    leaves: [
+      { value: "DEMNAS_25K", label: "25K" },
+      { value: "DEMNAS_50K", label: "50K" },
+    ],
+  },
 ] as const;
 
 const ALL_LEAF_VALUES = SATELLITE_GROUPS.flatMap((group) => group.leaves.map((leaf) => leaf.value));
+
+const FAMILY_LEAF_VALUES: Record<string, string[]> = {
+  sentinel: SATELLITE_GROUPS.filter((g) => g.family === "sentinel").flatMap((g) =>
+    g.leaves.map((leaf) => leaf.value)
+  ),
+  demnas: SATELLITE_GROUPS.filter((g) => g.family === "demnas").flatMap((g) => g.leaves.map((leaf) => leaf.value)),
+};
+
+/** DEMNAS and Sentinel are mutually exclusive per search (different, incompatible
+ * pagination models on the backend) - checking a leaf/group from one family clears
+ * the other family's selections entirely. Only called when checking, never when
+ * unchecking. */
+function clearOtherFamily(updated: string[], checkedFamily: string): string[] {
+  const otherFamily = checkedFamily === "sentinel" ? "demnas" : "sentinel";
+  return updated.filter((v) => !FAMILY_LEAF_VALUES[otherFamily].includes(v));
+}
 
 export function DateField({
   id,
@@ -211,7 +241,8 @@ function FilterPanel() {
                 const setGroupAll = (checked: boolean | "indeterminate") => {
                   const current = field.value ?? [];
                   const withoutGroup = current.filter((v) => !leafValues.includes(v));
-                  field.onChange(checked === true ? [...withoutGroup, ...leafValues] : withoutGroup);
+                  const updated = checked === true ? [...withoutGroup, ...leafValues] : withoutGroup;
+                  field.onChange(checked === true ? clearOtherFamily(updated, group.family) : updated);
                 };
 
                 return (
@@ -244,7 +275,8 @@ function FilterPanel() {
                                 const updated = next
                                   ? [...current, value]
                                   : current.filter((item) => item !== value);
-                                field.onChange(ALL_LEAF_VALUES.filter((v) => updated.includes(v)));
+                                const cleaned = next ? clearOtherFamily(updated, group.family) : updated;
+                                field.onChange(ALL_LEAF_VALUES.filter((v) => cleaned.includes(v)));
                               }}
                             />
                             {label}

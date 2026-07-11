@@ -7,6 +7,8 @@ const productTypeEnum = z.enum([
   "SENTINEL_2_L2A",
   "SENTINEL_3_SLSTR_L2_LST",
   "SENTINEL_3_SLSTR_L2_WST",
+  "DEMNAS_25K",
+  "DEMNAS_50K",
 ]);
 
 export const filterSchema = z
