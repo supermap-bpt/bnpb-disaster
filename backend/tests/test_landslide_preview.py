@@ -90,3 +90,33 @@ async def test_ensure_preview_returns_none_when_result_tif_is_missing(tmp_path):
     bounds = await landslide_preview.ensure_preview(tmp_path)
 
     assert bounds is None
+
+
+async def test_ensure_preview_caps_gdalwarp_output_to_max_dimension(monkeypatch, tmp_path):
+    """Regression test: a full, no-AOI scene's result.tif can be tens of
+    thousands of pixels per side - without capping the reprojected output
+    size, the preview PNG becomes too large for a browser to load/render.
+    gdalwarp's `-ts <width> 0` sets an exact target width with the height
+    auto-computed to preserve aspect ratio."""
+    (tmp_path / "result.tif").write_bytes(b"fake")
+    calls: list[tuple] = []
+
+    def fake_run(args, capture_output):
+        calls.append(tuple(args))
+        if args[0] == "gdalinfo":
+            return FakeCompletedProcess(
+                0,
+                stdout=b'{"cornerCoordinates": {"upperLeft": [95.0, 5.0], "lowerRight": [96.0, 4.0]}}',
+            )
+        return FakeCompletedProcess(0)
+
+    monkeypatch.setattr(landslide_preview.subprocess, "run", fake_run)
+
+    bounds = await landslide_preview.ensure_preview(tmp_path)
+
+    assert bounds == [4.0, 95.0, 5.0, 96.0]
+    gdalwarp_call = next(c for c in calls if c[0] == "gdalwarp")
+    assert "-ts" in gdalwarp_call
+    ts_index = gdalwarp_call.index("-ts")
+    assert gdalwarp_call[ts_index + 1] == str(landslide_preview._PREVIEW_MAX_DIMENSION)
+    assert gdalwarp_call[ts_index + 2] == "0"

@@ -37,6 +37,15 @@ _MASK_COMBINED_BAND = 5
 # doesn't render as a solid black block outside the real footprint.
 _COLOR_TABLE = "0 0 0 0 255\n1 255 255 255 255\nnv 0 0 0 0\n"
 
+# Cap the web-preview/KMZ overlay's long edge at this many pixels. A full,
+# no-AOI scene's result.tif can be tens of thousands of pixels per side (e.g.
+# 28343x21808 observed) - exporting a preview PNG at that native resolution
+# produces a multi-hundred-megapixel image that's too slow to download and
+# too large for a browser <img>/ImageOverlay to decode at all (it silently
+# fails to render). This only affects the derived preview/KMZ overlay -
+# result.tif itself (the actual download) stays full resolution.
+_PREVIEW_MAX_DIMENSION = 2048
+
 
 def _run_blocking(args: tuple[str, ...]) -> bool:
     try:
@@ -82,8 +91,11 @@ async def ensure_preview(work_dir: Path) -> list[float] | None:
         "gdaldem", "color-relief", "-alpha", "-b", str(_MASK_COMBINED_BAND),
         result.as_posix(), color_file.as_posix(), rgba.as_posix(),
     )
-    ok = ok and await _run("gdalwarp", "-t_srs", "EPSG:4326", "-r", "near",
-                           "-overwrite", rgba.as_posix(), wgs.as_posix())
+    ok = ok and await _run(
+        "gdalwarp", "-t_srs", "EPSG:4326", "-r", "near",
+        "-ts", str(_PREVIEW_MAX_DIMENSION), "0",
+        "-overwrite", rgba.as_posix(), wgs.as_posix(),
+    )
     ok = ok and await _run("gdal_translate", "-of", "PNG", wgs.as_posix(), png.as_posix())
     if not ok:
         return None
