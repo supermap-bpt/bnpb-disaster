@@ -26,7 +26,15 @@ from app.db.landslide_repository import LandslideJobRepository
 from app.db.repository import SatelliteRepository
 from app.db.session import get_sessionmaker
 from app.services.activity_log import activity_log
-from app.services.snap_graph import build_change_detection_graph, build_preprocess_graph
+from app.services.snap_graph import (
+    build_calibration_graph,
+    build_change_detection_graph,
+    build_db_graph,
+    build_orbit_graph,
+    build_speckle_graph,
+    build_terrain_correction_graph,
+    build_tnr_graph,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -94,12 +102,38 @@ async def _resolve_product_zip(satellite_id: uuid.UUID) -> Path | None:
 
 # Ordered pipeline stages shown in the UI stepper. Keep in sync with TOTAL_STAGES,
 # db/models.py's LandslideJob.total_stages default, and the frontend
-# LANDSLIDE_STAGE_KEYS labels. Pre/post preprocessing run as one concurrent stage
-# (they're fully independent until Collocate) - see _run_parallel_preprocess.
-STAGE_PREPROCESS = "Preprocess pre & post event (parallel)"
+# LANDSLIDE_STAGE_KEYS labels. Each of the 6 preprocessing operators runs pre
+# and post concurrently (they're independent per operator, until Collocate),
+# barrier-synced at each operator boundary - see _run_parallel_step.
+STAGE_ORBIT = "Apply Orbit File"
+STAGE_TNR = "Thermal Noise Removal"
+STAGE_CALIBRATION = "Calibration"
+STAGE_SPECKLE = "Speckle Filtering"
+STAGE_TERRAIN_CORRECTION = "Terrain Correction"
+STAGE_DB = "Linear to dB"
 STAGE_CHANGE_DETECTION = "Collocate & change-detection mask"
-STAGE_NAMES = [STAGE_PREPROCESS, STAGE_CHANGE_DETECTION]
+STAGE_NAMES = [
+    STAGE_ORBIT,
+    STAGE_TNR,
+    STAGE_CALIBRATION,
+    STAGE_SPECKLE,
+    STAGE_TERRAIN_CORRECTION,
+    STAGE_DB,
+    STAGE_CHANGE_DETECTION,
+]
 TOTAL_STAGES = len(STAGE_NAMES)
+
+# (stage_index, graph_builder, filename tag) for each of the 6 preprocessing
+# operators, in order. graph_builder(source, output_dim) -> graph XML, except
+# stage 0 (orbit) which also takes the optional aoi_bbox - see run_landslide_job.
+PREPROCESS_STEPS = [
+    (0, build_orbit_graph, "orbit"),
+    (1, build_tnr_graph, "tnr"),
+    (2, build_calibration_graph, "cal"),
+    (3, build_speckle_graph, "speckle"),
+    (4, build_terrain_correction_graph, "tc"),
+    (5, build_db_graph, "db"),
+]
 
 
 def _run_gpt_process_blocking(
@@ -189,22 +223,22 @@ async def _run_gpt_stage(
     return ok, tail
 
 
-async def _run_parallel_preprocess(
+async def _run_parallel_step(
     job_id: uuid.UUID,
     log,
     gpt_path: str,
+    stage_index: int,
     pre_graph_path: Path,
     post_graph_path: Path,
 ) -> tuple[bool, list[str], bool, list[str]]:
-    """Runs the pre-event and post-event preprocessing chains as two concurrent
-    gpt subprocesses (they're fully independent until Collocate) instead of one
-    after another - roughly halves this stage's wall-clock time. Returns
-    (pre_ok, pre_tail, post_ok, post_tail)."""
-    stage_name = STAGE_NAMES[0]
+    """Runs one operator's pre-event and post-event graphs as two concurrent
+    gpt subprocesses (they're independent within this operator) instead of one
+    after another. Returns (pre_ok, pre_tail, post_ok, post_tail)."""
+    stage_name = STAGE_NAMES[stage_index]
     await _update_job(
-        job_id, status="processing", stage=stage_name, stage_index=0, message=f"{stage_name}…"
+        job_id, status="processing", stage=stage_name, stage_index=stage_index, message=f"{stage_name}…"
     )
-    logger.info("[landslide %s] stage 1/%s: %s", job_id, TOTAL_STAGES, stage_name)
+    logger.info("[landslide %s] stage %s/%s: %s", job_id, stage_index + 1, TOTAL_STAGES, stage_name)
 
     loop = asyncio.get_running_loop()
     pcts = {"pre": 0, "post": 0}
@@ -219,7 +253,7 @@ async def _run_parallel_preprocess(
             with lock:
                 pcts[which] = pct
                 combined = (pcts["pre"] + pcts["post"]) / 2
-                overall = min(int(combined / 100 / TOTAL_STAGES * 100), 99)
+                overall = min(int((stage_index + combined / 100) / TOTAL_STAGES * 100), 99)
                 should_post = overall >= last_reported + 2
                 if should_post:
                     last_reported = overall
@@ -236,13 +270,27 @@ async def _run_parallel_preprocess(
 
     (pre_ok, pre_tail), (post_ok, post_tail) = await asyncio.gather(
         loop.run_in_executor(
-            None, _run_gpt_process_blocking, job_id, "pre-event", gpt_path, pre_graph_path, make_reporter("pre")
+            None,
+            _run_gpt_process_blocking,
+            job_id,
+            "pre-event",
+            gpt_path,
+            pre_graph_path,
+            make_reporter("pre"),
         ),
         loop.run_in_executor(
-            None, _run_gpt_process_blocking, job_id, "post-event", gpt_path, post_graph_path, make_reporter("post")
+            None,
+            _run_gpt_process_blocking,
+            job_id,
+            "post-event",
+            gpt_path,
+            post_graph_path,
+            make_reporter("post"),
         ),
     )
-    logger.info("[landslide %s] stage 1 exited pre_ok=%s post_ok=%s", job_id, pre_ok, post_ok)
+    logger.info(
+        "[landslide %s] stage %s exited pre_ok=%s post_ok=%s", job_id, stage_index + 1, pre_ok, post_ok
+    )
     return pre_ok, pre_tail, post_ok, post_tail
 
 
@@ -275,19 +323,7 @@ async def run_landslide_job(
 
         work_dir = LANDSLIDE_STORAGE_ROOT / str(job_id)
         work_dir.mkdir(parents=True, exist_ok=True)
-        pre_dim = work_dir / "pre.dim"
-        post_dim = work_dir / "post.dim"
         output_path = work_dir / "result.tif"
-
-        pre_graph_path = work_dir / "stage1_pre.xml"
-        post_graph_path = work_dir / "stage1_post.xml"
-        change_graph_path = work_dir / "stage2_change.xml"
-        pre_graph_path.write_text(
-            build_preprocess_graph(pre_zip.as_posix(), pre_dim.as_posix(), aoi_bbox), encoding="utf-8"
-        )
-        post_graph_path.write_text(
-            build_preprocess_graph(post_zip.as_posix(), post_dim.as_posix(), aoi_bbox), encoding="utf-8"
-        )
 
         logger.info(
             "[landslide %s] pre=%s post=%s threshold=%s aoi=%s",
@@ -300,32 +336,56 @@ async def run_landslide_job(
             salient = [ln for ln in tail if "NodeId" in ln or "Error" in ln or "Caused by" in ln]
             return " | ".join((salient or tail)[-6:]) or "no output produced"
 
-        try:
-            pre_ok, pre_tail, post_ok, post_tail = await _run_parallel_preprocess(
-                job_id, log, settings.snap_gpt_path, pre_graph_path, post_graph_path
-            )
-            failures = []
-            if not pre_ok or not pre_dim.exists():
-                failures.append(f"pre-event: {_fail_detail(pre_tail)}")
-            if not post_ok or not post_dim.exists():
-                failures.append(f"post-event: {_fail_detail(post_tail)}")
-            if failures:
-                msg = f"SNAP failed at '{STAGE_PREPROCESS}': {' | '.join(failures)}"
-                await log.mark_failed(msg)
-                await _update_job(job_id, status="failed", message=msg)
-                return
+        pre_input = pre_zip.as_posix()
+        post_input = post_zip.as_posix()
 
+        try:
+            for stage_index, build_graph, step_tag in PREPROCESS_STEPS:
+                pre_output = work_dir / f"pre_{stage_index}_{step_tag}.dim"
+                post_output = work_dir / f"post_{stage_index}_{step_tag}.dim"
+                pre_graph_path = work_dir / f"stage{stage_index}_pre_{step_tag}.xml"
+                post_graph_path = work_dir / f"stage{stage_index}_post_{step_tag}.xml"
+
+                if stage_index == 0:
+                    pre_graph_xml = build_graph(pre_input, pre_output.as_posix(), aoi_bbox)
+                    post_graph_xml = build_graph(post_input, post_output.as_posix(), aoi_bbox)
+                else:
+                    pre_graph_xml = build_graph(pre_input, pre_output.as_posix())
+                    post_graph_xml = build_graph(post_input, post_output.as_posix())
+                pre_graph_path.write_text(pre_graph_xml, encoding="utf-8")
+                post_graph_path.write_text(post_graph_xml, encoding="utf-8")
+
+                pre_ok, pre_tail, post_ok, post_tail = await _run_parallel_step(
+                    job_id, log, settings.snap_gpt_path, stage_index, pre_graph_path, post_graph_path
+                )
+                failures = []
+                if not pre_ok or not pre_output.exists():
+                    failures.append(f"pre-event: {_fail_detail(pre_tail)}")
+                if not post_ok or not post_output.exists():
+                    failures.append(f"post-event: {_fail_detail(post_tail)}")
+                if failures:
+                    msg = f"SNAP failed at '{STAGE_NAMES[stage_index]}': {' | '.join(failures)}"
+                    await log.mark_failed(msg)
+                    await _update_job(job_id, status="failed", message=msg)
+                    return
+
+                pre_input = pre_output.as_posix()
+                post_input = post_output.as_posix()
+
+            pre_dim = pre_input
+            post_dim = post_input
+            change_graph_path = work_dir / "stage6_change.xml"
             change_graph_path.write_text(
                 build_change_detection_graph(
-                    pre_dim.as_posix(),
-                    post_dim.as_posix(),
+                    pre_dim,
+                    post_dim,
                     output_path.as_posix(),
                     threshold_db,
                     settings.landslide_water_threshold_db,
                 ),
                 encoding="utf-8",
             )
-            ok, tail = await _run_gpt_stage(job_id, log, settings.snap_gpt_path, change_graph_path, stage_index=1)
+            ok, tail = await _run_gpt_stage(job_id, log, settings.snap_gpt_path, change_graph_path, stage_index=6)
             if not ok or not output_path.exists():
                 msg = f"SNAP failed at '{STAGE_CHANGE_DETECTION}': {_fail_detail(tail)}"
                 await log.mark_failed(msg)

@@ -86,9 +86,8 @@ async def test_run_gpt_process_blocking_reports_nonzero_exit_as_not_ok(monkeypat
 
 
 async def test_run_gpt_stage_scales_progress_into_its_slice_of_the_overall_bar(monkeypatch):
-    """With TOTAL_STAGES=2, stage_index=1 (change-detection) occupies the
-    second half of the 0-100 bar: overall = (1 + pct/100) / 2 * 100. Runs via
-    the real thread executor + asyncio.run_coroutine_threadsafe bridge."""
+    """With TOTAL_STAGES=7, stage_index=6 (change-detection, the last stage)
+    occupies the final 1/7 of the 0-100 bar: overall = (6 + pct/100) / 7 * 100."""
 
     def fake_blocking(job_id, label, gpt_path, graph_path, report_progress):
         report_progress(50)
@@ -101,18 +100,21 @@ async def test_run_gpt_stage_scales_progress_into_its_slice_of_the_overall_bar(m
     from pathlib import Path
 
     ok, tail = await landslide._run_gpt_stage(
-        job_id="job-1", log=log, gpt_path="gpt", graph_path=Path("g.xml"), stage_index=1
+        job_id="job-1", log=log, gpt_path="gpt", graph_path=Path("g.xml"), stage_index=6
     )
-    await asyncio.sleep(0.05)  # let cross-thread-scheduled progress callbacks flush
+    await asyncio.sleep(0.05)
 
     assert ok is True
     assert tail == ["done."]
     reported_overall = [progress for progress, _message in log.progress_calls]
-    # 50% -> (1 + 0.5)/2*100 = 75 ; 100% -> capped at 99 until the job confirms completion.
-    assert reported_overall == [75, 99]
+    # 50% -> (6 + 0.5)/7*100 = 92 ; 100% -> capped at 99 until the job confirms completion.
+    assert reported_overall == [92, 99]
 
 
-async def test_run_parallel_preprocess_reports_combined_average_progress(monkeypatch):
+async def test_run_parallel_step_reports_combined_average_progress_scaled_by_stage_index(monkeypatch):
+    """stage_index=2 of 7 total: once both sides hit 100%, combined progress
+    is (2 + 1.0) / 7 * 100 = 42 (not 50 - it's no longer stage 0 of 2)."""
+
     def fake_blocking(job_id, label, gpt_path, graph_path, report_progress):
         if label == "pre-event":
             report_progress(100)
@@ -126,21 +128,24 @@ async def test_run_parallel_preprocess_reports_combined_average_progress(monkeyp
 
     from pathlib import Path
 
-    pre_ok, pre_tail, post_ok, post_tail = await landslide._run_parallel_preprocess(
-        job_id="job-1", log=log, gpt_path="gpt", pre_graph_path=Path("pre.xml"), post_graph_path=Path("post.xml")
+    pre_ok, pre_tail, post_ok, post_tail = await landslide._run_parallel_step(
+        job_id="job-1",
+        log=log,
+        gpt_path="gpt",
+        stage_index=2,
+        pre_graph_path=Path("pre.xml"),
+        post_graph_path=Path("post.xml"),
     )
     await asyncio.sleep(0.05)
 
     assert (pre_ok, post_ok) == (True, True)
     assert pre_tail == ["pre-event done."]
     assert post_tail == ["post-event done."]
-    # Both stages together occupy the first half (1/TOTAL_STAGES) of the bar;
-    # final combined progress once both hit 100% is 100/100/2*100 = 50.
     final_overall = log.progress_calls[-1][0]
-    assert final_overall == 50
+    assert final_overall == 42  # int((2 + 1.0) / 7 * 100) == 42
 
 
-async def test_run_parallel_preprocess_surfaces_a_single_sides_failure(monkeypatch):
+async def test_run_parallel_step_surfaces_a_single_sides_failure(monkeypatch):
     def fake_blocking(job_id, label, gpt_path, graph_path, report_progress):
         if label == "pre-event":
             return False, ["Error: bad orbit file"]
@@ -152,8 +157,13 @@ async def test_run_parallel_preprocess_surfaces_a_single_sides_failure(monkeypat
 
     from pathlib import Path
 
-    pre_ok, pre_tail, post_ok, post_tail = await landslide._run_parallel_preprocess(
-        job_id="job-1", log=log, gpt_path="gpt", pre_graph_path=Path("pre.xml"), post_graph_path=Path("post.xml")
+    pre_ok, pre_tail, post_ok, post_tail = await landslide._run_parallel_step(
+        job_id="job-1",
+        log=log,
+        gpt_path="gpt",
+        stage_index=0,
+        pre_graph_path=Path("pre.xml"),
+        post_graph_path=Path("post.xml"),
     )
 
     assert pre_ok is False
@@ -195,9 +205,14 @@ async def test_verify_snap_gpt_reports_missing_binary(monkeypatch):
     assert "not found" in error
 
 
-def test_stage_names_and_total_stages_reflect_the_two_stage_parallel_pipeline():
+def test_stage_names_and_total_stages_reflect_the_seven_stage_per_operator_pipeline():
     assert landslide.STAGE_NAMES == [
-        "Preprocess pre & post event (parallel)",
+        "Apply Orbit File",
+        "Thermal Noise Removal",
+        "Calibration",
+        "Speckle Filtering",
+        "Terrain Correction",
+        "Linear to dB",
         "Collocate & change-detection mask",
     ]
-    assert landslide.TOTAL_STAGES == 2
+    assert landslide.TOTAL_STAGES == 7
