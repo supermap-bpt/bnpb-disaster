@@ -52,7 +52,8 @@ class LandslideJob(Base):
     message: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     stage: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     stage_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    total_stages: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    # Keep in sync with app/services/landslide.py's TOTAL_STAGES.
+    total_stages: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
     threshold_db: Mapped[str] = mapped_column(String, nullable=False, default="-2.0")
     result_path: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

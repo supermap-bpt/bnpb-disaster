@@ -51,11 +51,7 @@ const LANDSLIDE_STATUS_LABEL_KEY: Record<string, TranslationKey> = {
   failed: "landslideStatusFailed",
 };
 
-const LANDSLIDE_STAGE_KEYS: TranslationKey[] = [
-  "landslideStage1",
-  "landslideStage2",
-  "landslideStage3",
-];
+const LANDSLIDE_STAGE_KEYS: TranslationKey[] = ["landslideStage1", "landslideStage2"];
 
 const LANDSLIDE_STATUS_BADGE_CLASS: Record<string, string> = {
   pending: "bg-muted text-muted-foreground",

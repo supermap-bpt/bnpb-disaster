@@ -149,9 +149,8 @@ export const translations = {
     landslideStatusCompleted: "Selesai",
     landslideStatusFailed: "Gagal",
     landslideStep: "Langkah",
-    landslideStage1: "Praproses pra-kejadian",
-    landslideStage2: "Praproses pasca-kejadian",
-    landslideStage3: "Kolokasi & masker perubahan",
+    landslideStage1: "Praproses pra & pasca-kejadian (paralel)",
+    landslideStage2: "Kolokasi & masker perubahan",
 
     // Header nav
     navLogs: "Log Aktivitas",
@@ -323,9 +322,8 @@ export const translations = {
     landslideStatusCompleted: "Completed",
     landslideStatusFailed: "Failed",
     landslideStep: "Step",
-    landslideStage1: "Preprocess pre-event",
-    landslideStage2: "Preprocess post-event",
-    landslideStage3: "Collocate & change mask",
+    landslideStage1: "Preprocess pre & post event (parallel)",
+    landslideStage2: "Collocate & change mask",
 
     // Header nav
     navLogs: "Logs",

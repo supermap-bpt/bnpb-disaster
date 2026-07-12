@@ -1,6 +1,6 @@
 # Landslide SAR Processing (SNAP)
 
-The `/saved-satellite` page can run a Sentinel-1 backscatter change-detection
+The `/pre-disaster/landslide` page can run a Sentinel-1 backscatter change-detection
 workflow over a **pre-event + post-event** product pair to produce a landslide
 candidate mask. It replicates the manual "SNAP preprocessing Step by Step"
 workflow as one headless ESA SNAP GPT graph.
