@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { ReactNode } from "react";
 import { LanguageProvider } from "@/context/LanguageContext";
@@ -70,11 +70,11 @@ describe("MapBboxDrawTool", () => {
     fireEvent.click(screen.getByTestId("bbox-draw-button"));
     expect(onBboxChange).toHaveBeenCalledWith(null);
 
-    mapEventHandlers.mousedown({ latlng: latlng(4.0, 97.5) });
+    act(() => mapEventHandlers.mousedown({ latlng: latlng(4.0, 97.5) }));
     expect(dragDisableMock).toHaveBeenCalled();
-    mapEventHandlers.mousemove({ latlng: latlng(5.0, 98.3) });
+    act(() => mapEventHandlers.mousemove({ latlng: latlng(5.0, 98.3) }));
     expect(rectangleLog[rectangleLog.length - 1]).toEqual([latlng(4.0, 97.5), latlng(5.0, 98.3)]);
-    mapEventHandlers.mouseup({ latlng: latlng(5.0, 98.3) });
+    act(() => mapEventHandlers.mouseup({ latlng: latlng(5.0, 98.3) }));
 
     expect(dragEnableMock).toHaveBeenCalled();
     expect(onBboxChange).toHaveBeenLastCalledWith([97.5, 4.0, 98.3, 5.0]);
@@ -91,8 +91,8 @@ describe("MapBboxDrawTool", () => {
     fireEvent.click(screen.getByTestId("bbox-draw-button"));
     onBboxChange.mockClear();
 
-    mapEventHandlers.mousedown({ latlng: latlng(4.0, 97.5) });
-    mapEventHandlers.mouseup({ latlng: latlng(4.0, 97.5) });
+    act(() => mapEventHandlers.mousedown({ latlng: latlng(4.0, 97.5) }));
+    act(() => mapEventHandlers.mouseup({ latlng: latlng(4.0, 97.5) }));
 
     expect(onBboxChange).not.toHaveBeenCalled();
   });

@@ -1,5 +1,4 @@
 import { useCallback, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { Marker, Rectangle, useMap, useMapEvents } from "react-leaflet";
 import L, { type LatLng, type LatLngBoundsExpression, type LeafletEvent } from "leaflet";
 import { BoxSelect, X } from "lucide-react";
@@ -52,26 +51,20 @@ function MapBboxDrawTool({
     mousedown(event) {
       if (!isDrawing) return;
       startRef.current = event.latlng;
-      // Leaflet's mouse events fire outside React's event system, so a plain
-      // setState here would be batched (React 18) and not reflected in the
-      // Rectangle's bounds until some later tick. flushSync forces the
-      // rectangle to track the cursor immediately on every move.
-      flushSync(() => setDraftBounds([event.latlng, event.latlng]));
+      setDraftBounds([event.latlng, event.latlng]);
       map.dragging.disable();
     },
     mousemove(event) {
       if (!isDrawing || !startRef.current) return;
-      flushSync(() => setDraftBounds([startRef.current as LatLng, event.latlng]));
+      setDraftBounds([startRef.current as LatLng, event.latlng]);
     },
     mouseup(event) {
       if (!isDrawing || !startRef.current) return;
       const start = startRef.current;
       const end = event.latlng;
       startRef.current = null;
-      flushSync(() => {
-        setDraftBounds(null);
-        setIsDrawing(false);
-      });
+      setDraftBounds(null);
+      setIsDrawing(false);
       map.dragging.enable();
       if (start.lat === end.lat && start.lng === end.lng) return; // zero-area click, discard
       onBboxChange(boundsToBbox(start, end));
