@@ -127,8 +127,6 @@ export const translations = {
     retryFileDownload: "Coba lagi",
     landslideSectionTitle: "Deteksi Longsor (SAR)",
     landslideSelectHint: "Pilih tepat dua produk yang siap (pra & pasca kejadian), lalu proses.",
-    landslideAoiPlaceholder: "AOI opsional: minLon,minLat,maxLon,maxLat (kosong = seluruh citra)",
-    landslideAoiInvalid: "Format AOI salah. Gunakan: minLon,minLat,maxLon,maxLat",
     landslideNoAoiConfirm:
       "AOI kosong: seluruh citra (~250 km) akan diproses — sangat lambat (~20 menit, ukuran GB). Isi AOI untuk jauh lebih cepat. Tetap lanjut?",
     landslideSelect: "Pilih",
@@ -307,8 +305,6 @@ export const translations = {
     retryFileDownload: "Retry",
     landslideSectionTitle: "Landslide Detection (SAR)",
     landslideSelectHint: "Select exactly two ready products (pre- & post-event), then process.",
-    landslideAoiPlaceholder: "Optional AOI: minLon,minLat,maxLon,maxLat (empty = full scene)",
-    landslideAoiInvalid: "Invalid AOI format. Use: minLon,minLat,maxLon,maxLat",
     landslideNoAoiConfirm:
       "No AOI set: the full ~250 km scene will be processed — very slow (~20 min, GBs). Set an AOI to make it much faster. Continue anyway?",
     landslideSelect: "Select",

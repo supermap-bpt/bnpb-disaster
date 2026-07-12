@@ -17,7 +17,7 @@ import {
   type SavedSatelliteDetail,
   type SavedSatelliteSummary,
 } from "@/api/client";
-import type { LandslideOverlay } from "@/components/SavedSatelliteMap";
+import type { Bbox, LandslideOverlay } from "@/components/SavedSatelliteMap";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -85,7 +85,7 @@ function SavedSatellitePage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [jobs, setJobs] = useState<LandslideJob[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [aoiInput, setAoiInput] = useState("");
+  const [bbox, setBbox] = useState<Bbox | null>(null);
   const [previewJobId, setPreviewJobId] = useState<string | null>(null);
   const [landslideOverlay, setLandslideOverlay] = useState<LandslideOverlay | null>(null);
 
@@ -109,15 +109,6 @@ function SavedSatellitePage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : t("landslidePreviewFailed"));
     }
-  };
-
-  // Parse "minLon,minLat,maxLon,maxLat" -> tuple, or null if empty/invalid.
-  const parseAoi = (raw: string): [number, number, number, number] | null => {
-    const parts = raw.split(",").map((p) => Number(p.trim()));
-    if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) return null;
-    const [minLon, minLat, maxLon, maxLat] = parts;
-    if (minLon >= maxLon || minLat >= maxLat) return null;
-    return [minLon, minLat, maxLon, maxLat];
   };
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total]);
@@ -156,24 +147,14 @@ function SavedSatellitePage() {
       setError(t("landslideNeedTwo"));
       return;
     }
-    const trimmed = aoiInput.trim();
-    let aoi: [number, number, number, number] | undefined;
-    if (trimmed) {
-      const parsed = parseAoi(trimmed);
-      if (!parsed) {
-        setError(t("landslideAoiInvalid"));
-        return;
-      }
-      aoi = parsed;
-    }
     // No AOI = full ~250 km scene = very slow (~20 min, GBs). Make the user confirm.
-    if (!aoi && !window.confirm(t("landslideNoAoiConfirm"))) {
+    if (!bbox && !window.confirm(t("landslideNoAoiConfirm"))) {
       return;
     }
     setIsProcessing(true);
     setError(null);
     try {
-      await processLandslide(selectedIds[0], selectedIds[1], aoi);
+      await processLandslide(selectedIds[0], selectedIds[1], bbox ?? undefined);
       setSelectedIds([]);
       await loadJobs();
     } catch (err) {
@@ -307,12 +288,6 @@ function SavedSatellitePage() {
                 <Mountain className="h-3 w-3" /> {t("landslideProcess")}
               </Button>
             </div>
-            <Input
-              value={aoiInput}
-              onChange={(event) => setAoiInput(event.target.value)}
-              placeholder={t("landslideAoiPlaceholder")}
-              className="h-7 text-[11px]"
-            />
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
@@ -608,7 +583,12 @@ function SavedSatellitePage() {
       </div>
 
       <div className="w-1/2 overflow-hidden rounded-xl border">
-        <SavedSatelliteMap selected={selectedDetail} overlay={landslideOverlay} />
+        <SavedSatelliteMap
+          selected={selectedDetail}
+          overlay={landslideOverlay}
+          bbox={bbox}
+          onBboxChange={setBbox}
+        />
       </div>
 
       {infoModalItem && (
