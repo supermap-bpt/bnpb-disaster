@@ -62,6 +62,29 @@ class LandslideJob(Base):
     )
 
 
+class FloodJob(Base):
+    __tablename__ = "flood_jobs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Single product - unlike LandslideJob's pre/post pair, Flood processes one scene.
+    satellite_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    # pending | processing | completed | failed
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    message: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    stage: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    stage_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Keep in sync with app/services/flood.py's TOTAL_STAGES.
+    total_stages: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
+    threshold_sigma0: Mapped[str] = mapped_column(String, nullable=False, default="0.0137")
+    result_path: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
 

@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     # water / radar shadow / smooth surfaces and excluded from the landslide mask.
     # Land/vegetation VV is typically > -15 dB; open water is < -20 dB.
     landslide_water_threshold_db: float = -17.0
+    # Sigma0 (linear, not dB) cutoff for the flood binary mask, per the reference PDF.
+    flood_threshold_sigma0: float = 0.0137
 
     @property
     def cors_origins(self) -> list[str]:
