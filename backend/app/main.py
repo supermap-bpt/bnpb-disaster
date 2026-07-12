@@ -9,6 +9,7 @@ from pydantic import ValidationError as PydanticValidationError
 from app.config import get_settings
 from app.routers.attributes import router as attributes_router
 from app.routers.download import router as download_router
+from app.routers.flood import router as flood_router
 from app.routers.geocode import router as geocode_router
 from app.routers.landslide import router as landslide_router
 from app.routers.logs import router as logs_router
@@ -82,5 +83,6 @@ app.include_router(download_router)
 app.include_router(attributes_router)
 app.include_router(satellites_router)
 app.include_router(landslide_router)
+app.include_router(flood_router)
 app.include_router(logs_router)
 app.mount("/storage", StaticFiles(directory="storage", check_dir=False), name="storage")

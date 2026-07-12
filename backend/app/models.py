@@ -239,6 +239,45 @@ class LandslideJobsListResponse(BaseModel):
     total: int
 
 
+class ProcessFloodRequest(BaseModel):
+    satelliteId: str = Field(..., description="Saved satellite id of the product to process.")
+    aoi: list[float] | None = Field(
+        default=None,
+        description="Optional crop bbox [minLon, minLat, maxLon, maxLat] to speed up processing.",
+    )
+
+    @model_validator(mode="after")
+    def check_request(self) -> "ProcessFloodRequest":
+        if self.aoi is not None:
+            if len(self.aoi) != 4:
+                raise ValueError("aoi must be [minLon, minLat, maxLon, maxLat]")
+            min_lon, min_lat, max_lon, max_lat = self.aoi
+            if min_lon >= max_lon or min_lat >= max_lat:
+                raise ValueError("aoi min must be less than max for both lon and lat")
+        return self
+
+
+class FloodJobResponse(BaseModel):
+    id: str
+    name: str
+    satelliteId: str
+    status: str
+    progress: int
+    message: str | None = None
+    stage: str | None = None
+    stageIndex: int
+    totalStages: int
+    thresholdSigma0: float
+    hasResult: bool
+    createdAt: datetime
+    updatedAt: datetime
+
+
+class FloodJobsListResponse(BaseModel):
+    items: list[FloodJobResponse]
+    total: int
+
+
 class ActivityLogEntry(BaseModel):
     id: str
     action: str
