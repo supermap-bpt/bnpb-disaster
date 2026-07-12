@@ -3,14 +3,35 @@
 The `/pre-disaster/landslide` page can run a Sentinel-1 backscatter change-detection
 workflow over a **pre-event + post-event** product pair to produce a landslide
 candidate mask. It replicates the manual "SNAP preprocessing Step by Step"
-workflow as one headless ESA SNAP GPT graph.
+workflow, but instead of one fused ESA SNAP GPT graph, preprocessing runs as
+**six separate per-operator `gpt` invocations**, each writing its output to an
+intermediate BEAM-DIMAP `.dim` file that becomes the next operator's `Read`
+input. For each operator, the pre-event and post-event graphs run concurrently
+(they're independent of each other until Collocate) and are barrier-synced
+before the pipeline advances to the next operator - so a stage never starts
+until both tracks have finished the previous one. A seventh, unchanged graph
+then runs Collocate and the change-detection band maths over the two tracks'
+final `.dim` outputs.
 
 ## Pipeline (per polarisation VV & VH, both products)
 
-Read → Apply-Orbit-File → ThermalNoiseRemoval → Calibration (Sigma0) →
-Speckle-Filter (Refined Lee) → Terrain-Correction (Copernicus 30m DEM, ~10 m) →
-LinearToFromdB → **Collocate** (post = master `_M`, pre = slave `_S`) →
-Band Maths → GeoTIFF.
+Six per-operator stages, pre/post run concurrently and barrier-synced at each
+arrow below, each stage round-tripping through a `.dim` file on disk:
+
+```
+Read → Apply-Orbit-File → [.dim] → Read → ThermalNoiseRemoval → [.dim] →
+Read → Calibration (Sigma0) → [.dim] → Read → Speckle-Filter (Refined Lee) →
+[.dim] → Read → Terrain-Correction (Copernicus 30m DEM, ~10 m) → [.dim] →
+Read → LinearToFromdB → [.dim]
+```
+
+Then a seventh graph reads both tracks' final `.dim` output and finishes the
+chain in one pass:
+
+```
+Read (pre .dim) + Read (post .dim) → Collocate (post = master `_M`,
+pre = slave `_S`) → Band Maths → GeoTIFF
+```
 
 Band maths (post − pre, threshold from `LANDSLIDE_THRESHOLD_DB`, default −2 dB):
 

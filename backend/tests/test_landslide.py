@@ -12,6 +12,9 @@ callback bridging (asyncio.run_coroutine_threadsafe), not a mocked stand-in
 for it.
 """
 import asyncio
+from contextlib import asynccontextmanager
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -39,9 +42,43 @@ class FakePopen:
 class FakeLog:
     def __init__(self) -> None:
         self.progress_calls: list[tuple[int, str]] = []
+        self.failed_message: str | None = None
 
     async def set_progress(self, progress: int, description: str) -> None:
         self.progress_calls.append((progress, description))
+
+    async def mark_failed(self, message: str) -> None:
+        self.failed_message = message
+
+
+def _activity_log_returning(log: FakeLog):
+    """Builds a fake replacement for `landslide.activity_log` (normally an
+    `@asynccontextmanager` factory) that always yields `log`, so
+    run_landslide_job-level tests don't need a real ActivityLog DB row."""
+
+    @asynccontextmanager
+    async def _fake_activity_log(**_kwargs):
+        yield log
+
+    return _fake_activity_log
+
+
+def _make_recording_graph_builder(calls: list[tuple], output_index: int = 1):
+    """Fake stand-in for one of the snap_graph.build_*_graph functions: records
+    the raw positional args it was called with (so tests can check which
+    stages get an aoi_bbox and how outputs chain into the next stage's input),
+    and - since run_landslide_job checks `output.exists()` right after each
+    stage - creates an empty placeholder file at the output path (args[output_index])
+    so those checks pass without needing real SNAP to produce it."""
+
+    def _fake(*args):
+        calls.append(args)
+        output = Path(args[output_index])
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text("")
+        return "<graph/>"
+
+    return _fake
 
 
 @pytest.fixture(autouse=True)
@@ -216,3 +253,194 @@ def test_stage_names_and_total_stages_reflect_the_seven_stage_per_operator_pipel
         "Collocate & change-detection mask",
     ]
     assert landslide.TOTAL_STAGES == 7
+
+
+class _RunLandslideJobFixture:
+    """Shared monkeypatch scaffolding for run_landslide_job-level tests: fakes
+    every operator's graph builder (recording call args) plus _resolve_product_zip,
+    _verify_snap_gpt and activity_log, so the 6-step PREPROCESS_STEPS loop plus the
+    final change-detection stage can run end-to-end without real SNAP or a real
+    Postgres session. `_run_parallel_step` and `_run_gpt_stage` are left to the
+    caller to monkeypatch, since that's what differs between the "everything
+    succeeds" and "mid-pipeline failure" tests."""
+
+    def __init__(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.setattr(landslide, "LANDSLIDE_STORAGE_ROOT", tmp_path)
+
+        self.pre_zip = tmp_path / "pre.SAFE.zip"
+        self.post_zip = tmp_path / "post.SAFE.zip"
+
+        async def fake_resolve(satellite_id):
+            return self.pre_zip if satellite_id == "pre-sat" else self.post_zip
+
+        monkeypatch.setattr(landslide, "_resolve_product_zip", fake_resolve)
+
+        async def fake_verify(gpt_path):
+            return None
+
+        monkeypatch.setattr(landslide, "_verify_snap_gpt", fake_verify)
+
+        self.log = FakeLog()
+        monkeypatch.setattr(landslide, "activity_log", _activity_log_returning(self.log))
+
+        self.orbit_calls: list[tuple] = []
+        self.tnr_calls: list[tuple] = []
+        self.cal_calls: list[tuple] = []
+        self.speckle_calls: list[tuple] = []
+        self.tc_calls: list[tuple] = []
+        self.db_calls: list[tuple] = []
+        self.change_calls: list[tuple] = []
+
+        # NOTE: run_landslide_job's loop iterates `landslide.PREPROCESS_STEPS`,
+        # a module-level list built at import time from *direct references* to
+        # build_orbit_graph/build_tnr_graph/etc - not attribute lookups. So
+        # monkeypatching e.g. `landslide.build_orbit_graph` would NOT affect
+        # what the loop actually calls; PREPROCESS_STEPS itself must be
+        # monkeypatched. (build_change_detection_graph is different: it's
+        # called by bare name directly in run_landslide_job's body, resolved
+        # against module globals on every call, so patching the module
+        # attribute works for it.)
+        monkeypatch.setattr(
+            landslide,
+            "PREPROCESS_STEPS",
+            [
+                (0, _make_recording_graph_builder(self.orbit_calls), "orbit"),
+                (1, _make_recording_graph_builder(self.tnr_calls), "tnr"),
+                (2, _make_recording_graph_builder(self.cal_calls), "cal"),
+                (3, _make_recording_graph_builder(self.speckle_calls), "speckle"),
+                (4, _make_recording_graph_builder(self.tc_calls), "tc"),
+                (5, _make_recording_graph_builder(self.db_calls), "db"),
+            ],
+        )
+        monkeypatch.setattr(
+            landslide,
+            "build_change_detection_graph",
+            _make_recording_graph_builder(self.change_calls, output_index=2),
+        )
+
+        self.settings = SimpleNamespace(snap_gpt_path="gpt", landslide_water_threshold_db=-17.0)
+
+    async def run(self, aoi_bbox=None):
+        await landslide.run_landslide_job(
+            job_id="job-1",
+            pre_satellite_id="pre-sat",
+            post_satellite_id="post-sat",
+            threshold_db=-2.0,
+            settings=self.settings,
+            aoi_bbox=aoi_bbox,
+        )
+
+
+async def test_run_landslide_job_chains_dim_outputs_and_gates_aoi_bbox_to_stage_zero(
+    monkeypatch, tmp_path, fake_update_job
+):
+    fixture = _RunLandslideJobFixture(monkeypatch, tmp_path)
+
+    parallel_step_calls: list[int] = []
+
+    async def fake_run_parallel_step(job_id, log_, gpt_path, stage_index, pre_graph_path, post_graph_path):
+        parallel_step_calls.append(stage_index)
+        return True, [], True, []
+
+    monkeypatch.setattr(landslide, "_run_parallel_step", fake_run_parallel_step)
+
+    async def fake_run_gpt_stage(job_id, log_, gpt_path, graph_path, stage_index):
+        return True, []
+
+    monkeypatch.setattr(landslide, "_run_gpt_stage", fake_run_gpt_stage)
+
+    await fixture.run(aoi_bbox=[1.0, 2.0, 3.0, 4.0])
+
+    # All 6 preprocessing operators ran, in order, barrier-synced pre/post each time.
+    assert parallel_step_calls == [0, 1, 2, 3, 4, 5]
+
+    # Only stage 0 (orbit) receives the aoi_bbox; every other operator gets a
+    # plain (source, output_dim) call with no third argument at all.
+    assert len(fixture.orbit_calls) == 2
+    for call in fixture.orbit_calls:
+        assert len(call) == 3
+        assert call[2] == [1.0, 2.0, 3.0, 4.0]
+
+    for calls in (
+        fixture.tnr_calls,
+        fixture.cal_calls,
+        fixture.speckle_calls,
+        fixture.tc_calls,
+        fixture.db_calls,
+    ):
+        assert len(calls) == 2
+        for call in calls:
+            assert len(call) == 2
+
+    # Each stage's .dim output threads into the next stage's Read input, for the
+    # pre-event and post-event tracks independently.
+    orbit_pre, orbit_post = fixture.orbit_calls
+    tnr_pre, tnr_post = fixture.tnr_calls
+    cal_pre, cal_post = fixture.cal_calls
+    speckle_pre, speckle_post = fixture.speckle_calls
+    tc_pre, tc_post = fixture.tc_calls
+    db_pre, db_post = fixture.db_calls
+
+    assert orbit_pre[0] == fixture.pre_zip.as_posix()
+    assert orbit_post[0] == fixture.post_zip.as_posix()
+    assert tnr_pre[0] == orbit_pre[1]
+    assert tnr_post[0] == orbit_post[1]
+    assert cal_pre[0] == tnr_pre[1]
+    assert cal_post[0] == tnr_post[1]
+    assert speckle_pre[0] == cal_pre[1]
+    assert speckle_post[0] == cal_post[1]
+    assert tc_pre[0] == speckle_pre[1]
+    assert tc_post[0] == speckle_post[1]
+    assert db_pre[0] == tc_pre[1]
+    assert db_post[0] == tc_post[1]
+
+    # The final change-detection stage consumes both tracks' last .dim output.
+    assert len(fixture.change_calls) == 1
+    change_args = fixture.change_calls[0]
+    assert change_args[0] == db_pre[1]
+    assert change_args[1] == db_post[1]
+
+    statuses = [fields.get("status") for fields in fake_update_job if "status" in fields]
+    assert statuses[-1] == "completed"
+
+
+async def test_run_landslide_job_aborts_immediately_on_mid_pipeline_failure(
+    monkeypatch, tmp_path, fake_update_job
+):
+    fixture = _RunLandslideJobFixture(monkeypatch, tmp_path)
+
+    parallel_step_calls: list[int] = []
+
+    async def fake_run_parallel_step(job_id, log_, gpt_path, stage_index, pre_graph_path, post_graph_path):
+        parallel_step_calls.append(stage_index)
+        if stage_index == 2:  # Calibration fails.
+            return False, ["Error: calibration boom"], True, ["post-event done."]
+        return True, [], True, []
+
+    monkeypatch.setattr(landslide, "_run_parallel_step", fake_run_parallel_step)
+
+    change_detection_ran = False
+
+    async def fake_run_gpt_stage(job_id, log_, gpt_path, graph_path, stage_index):
+        nonlocal change_detection_ran
+        change_detection_ran = True
+        return True, []
+
+    monkeypatch.setattr(landslide, "_run_gpt_stage", fake_run_gpt_stage)
+
+    await fixture.run()
+
+    # The loop stopped right after the failing stage - it never attempted the
+    # later operators or the final change-detection stage.
+    assert parallel_step_calls == [0, 1, 2]
+    assert fixture.speckle_calls == []
+    assert fixture.tc_calls == []
+    assert fixture.db_calls == []
+    assert fixture.change_calls == []
+    assert change_detection_ran is False
+
+    assert fixture.log.failed_message is not None
+    assert "Calibration" in fixture.log.failed_message
+
+    statuses = [fields.get("status") for fields in fake_update_job if "status" in fields]
+    assert statuses[-1] == "failed"
