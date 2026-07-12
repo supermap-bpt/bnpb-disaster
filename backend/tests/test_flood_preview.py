@@ -1,44 +1,38 @@
-"""Unit tests for flood_preview.py's GDAL subprocess layer - mirrors
-test_landslide_preview.py's structure exactly (same root-cause thread-executor
-regression test), adjusted for Flood's simpler single-value color table."""
-from pathlib import Path
+"""Unit tests for flood_preview.py's rasterio/numpy/Pillow RGBA compositing.
 
+Uses real, tiny in-memory GeoTIFFs (written via rasterio) rather than mocking
+GDAL subprocess calls - the whole point of this module is to stop depending
+on GDAL's `gdaldem color-relief` interpolation semantics (which, without a
+NoData tag on the source, painted an entire real result.tif solid red - a
+live-confirmed production bug), so tests exercise the real read/composite/
+save path against real pixel data instead."""
+import zipfile
+from io import BytesIO
+
+import numpy as np
 import pytest
+import rasterio
+from PIL import Image
+from rasterio.transform import from_bounds
 
 from app.services import flood_preview
 
 
-class FakeCompletedProcess:
-    def __init__(self, returncode: int, stdout: bytes = b"", stderr: bytes = b"") -> None:
-        self.returncode = returncode
-        self.stdout = stdout
-        self.stderr = stderr
-
-
-async def test_run_never_uses_asyncio_subprocess_exec(monkeypatch):
-    def fail_if_called(*_a, **_k):
-        raise AssertionError("must not use asyncio.create_subprocess_exec")
-
-    monkeypatch.setattr(flood_preview.asyncio, "create_subprocess_exec", fail_if_called)
-    monkeypatch.setattr(
-        flood_preview.subprocess, "run", lambda args, capture_output: FakeCompletedProcess(0)
-    )
-
-    ok = await flood_preview._run("gdalwarp", "-t_srs", "EPSG:4326")
-
-    assert ok is True
-
-
-async def test_run_reports_nonzero_exit_as_not_ok(monkeypatch):
-    monkeypatch.setattr(
-        flood_preview.subprocess,
-        "run",
-        lambda args, capture_output: FakeCompletedProcess(1, stderr=b"Error: bad input"),
-    )
-
-    ok = await flood_preview._run("gdalwarp", "-t_srs", "EPSG:4326")
-
-    assert ok is False
+def _write_test_geotiff(path, band: np.ndarray, bounds=(97.0, 4.0, 98.0, 5.0)) -> None:
+    west, south, east, north = bounds
+    transform = from_bounds(west, south, east, north, band.shape[1], band.shape[0])
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=band.shape[0],
+        width=band.shape[1],
+        count=1,
+        dtype="float32",
+        crs="EPSG:4326",
+        transform=transform,
+    ) as ds:
+        ds.write(band, 1)
 
 
 async def test_ensure_preview_returns_none_when_result_tif_is_missing(tmp_path):
@@ -47,36 +41,74 @@ async def test_ensure_preview_returns_none_when_result_tif_is_missing(tmp_path):
     assert bounds is None
 
 
-async def test_ensure_preview_caps_gdalwarp_output_and_uses_flood_color_table(monkeypatch, tmp_path):
-    (tmp_path / "result.tif").write_bytes(b"fake")
-    calls: list[tuple] = []
-
-    def fake_run(args, capture_output):
-        calls.append(tuple(args))
-        if args[0] == "gdalinfo":
-            return FakeCompletedProcess(
-                0,
-                stdout=b'{"cornerCoordinates": {"upperLeft": [95.0, 5.0], "lowerRight": [96.0, 4.0]}}',
-            )
-        return FakeCompletedProcess(0)
-
-    monkeypatch.setattr(flood_preview.subprocess, "run", fake_run)
+async def test_ensure_preview_produces_transparent_background_and_opaque_red_flood(tmp_path):
+    band = np.full((4, 4), np.nan, dtype="float32")
+    band[1, 1] = 1.0
+    band[2, 2] = 1.0
+    _write_test_geotiff(tmp_path / "result.tif", band)
 
     bounds = await flood_preview.ensure_preview(tmp_path)
 
-    assert bounds == [4.0, 95.0, 5.0, 96.0]
-    gdaldem_call = next(c for c in calls if c[0] == "gdaldem")
-    assert "-b" in gdaldem_call
-    band_index = gdaldem_call[gdaldem_call.index("-b") + 1]
-    assert band_index == str(flood_preview._FLOOD_MASK_BAND)
-    gdalwarp_call = next(c for c in calls if c[0] == "gdalwarp")
-    assert "-ts" in gdalwarp_call
-    ts_index = gdalwarp_call.index("-ts")
-    assert gdalwarp_call[ts_index + 1] == str(flood_preview._PREVIEW_MAX_DIMENSION)
-    assert gdalwarp_call[ts_index + 2] == "0"
+    assert bounds == [4.0, 97.0, 5.0, 98.0]  # south, west, north, east
+    png = Image.open(tmp_path / "preview.png")
+    assert png.mode == "RGBA"
+    pixels = np.array(png)
+    assert tuple(pixels[1, 1]) == (255, 0, 0, 180)
+    assert tuple(pixels[2, 2]) == (255, 0, 0, 180)
+    # Background (NaN in the source) must be fully transparent, not white/black/red.
+    assert tuple(pixels[0, 0]) == (0, 0, 0, 0)
+    assert tuple(pixels[3, 3]) == (0, 0, 0, 0)
 
 
-def test_color_table_maps_flood_value_to_red_and_everything_else_transparent():
-    lines = flood_preview._COLOR_TABLE.strip().splitlines()
-    assert "1 255 0 0 255" in lines  # flood (value 1) -> opaque red
-    assert "nv 0 0 0 0" in lines  # genuine no-data (the else-NaN branch) -> transparent
+async def test_ensure_preview_downsamples_to_max_dimension_without_blending_values(tmp_path):
+    band = np.full((3000, 4000), np.nan, dtype="float32")
+    band[10:20, 10:20] = 1.0
+    _write_test_geotiff(tmp_path / "result.tif", band)
+
+    await flood_preview.ensure_preview(tmp_path)
+
+    png = Image.open(tmp_path / "preview.png")
+    assert max(png.size) <= flood_preview._PREVIEW_MAX_DIMENSION
+    pixels = np.array(png)
+    # Nearest-neighbor resampling must only ever produce the two exact colors -
+    # no blended/interpolated in-between RGBA values from downsampling.
+    unique_colors = {tuple(c) for c in pixels.reshape(-1, 4)}
+    assert unique_colors <= {(255, 0, 0, 180), (0, 0, 0, 0)}
+
+
+async def test_ensure_preview_caches_and_does_not_recompute(tmp_path):
+    band = np.full((4, 4), np.nan, dtype="float32")
+    band[0, 0] = 1.0
+    _write_test_geotiff(tmp_path / "result.tif", band)
+
+    first = await flood_preview.ensure_preview(tmp_path)
+    mtime_before = (tmp_path / "preview.png").stat().st_mtime_ns
+    second = await flood_preview.ensure_preview(tmp_path)
+    mtime_after = (tmp_path / "preview.png").stat().st_mtime_ns
+
+    assert first == second == [4.0, 97.0, 5.0, 98.0]
+    assert mtime_before == mtime_after
+
+
+async def test_ensure_kmz_packages_doc_kml_and_rgba_png_no_tiff(tmp_path):
+    band = np.full((4, 4), np.nan, dtype="float32")
+    band[0, 0] = 1.0
+    _write_test_geotiff(tmp_path / "result.tif", band)
+
+    kmz_path = await flood_preview.ensure_kmz(tmp_path, name="Test Flood")
+
+    assert kmz_path is not None
+    with zipfile.ZipFile(kmz_path) as zf:
+        names = zf.namelist()
+        assert "doc.kml" in names
+        assert "overlay.png" in names
+        assert not any(n.lower().endswith((".tif", ".tiff")) for n in names)
+
+        kml_content = zf.read("doc.kml").decode("utf-8")
+        assert "<GroundOverlay>" in kml_content
+        assert "<href>overlay.png</href>" in kml_content
+        assert "Test Flood" in kml_content
+
+        png_bytes = zf.read("overlay.png")
+        img = Image.open(BytesIO(png_bytes))
+        assert img.mode == "RGBA"

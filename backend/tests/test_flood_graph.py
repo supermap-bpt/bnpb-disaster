@@ -82,12 +82,12 @@ def test_build_speckle_graph_uses_lee_sigma_pdf_params():
     assert "<file>speckle.dim</file>" in xml
 
 
-def test_build_terrain_correction_graph_uses_srtm_and_wgs84dd():
+def test_build_terrain_correction_graph_uses_copernicus_and_wgs84dd():
     xml = build_terrain_correction_graph("speckle.dim", "tc.dim")
 
     assert "<file>speckle.dim</file>" in xml
     assert "<operator>Terrain-Correction</operator>" in xml
-    assert "<demName>SRTM 3Sec (Auto Download)</demName>" in xml
+    assert "<demName>Copernicus 30m Global DEM</demName>" in xml
     assert "<demResamplingMethod>NEAREST_NEIGHBOUR</demResamplingMethod>" in xml
     assert "<imgResamplingMethod>NEAREST_NEIGHBOUR</imgResamplingMethod>" in xml
     assert "<mapProjection>WGS84(DD)</mapProjection>" in xml

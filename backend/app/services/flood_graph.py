@@ -137,14 +137,15 @@ def build_speckle_graph(source_dim: str, output_dim: str) -> str:
 
 
 def build_terrain_correction_graph(source_dim: str, output_dim: str) -> str:
-    """Step 7/8: Read -> Range-Doppler Terrain-Correction (SRTM 3Sec
-    Auto-Download DEM, nearest-neighbor resampling, WGS84(DD) plain lat/lon,
-    10m pixel spacing - the PDF's exact parameters) -> Write.
+    """Step 7/8: Read -> Range-Doppler Terrain-Correction (Copernicus 30m DEM,
+    nearest-neighbor resampling, WGS84(DD) plain lat/lon, 10m pixel spacing)
+    -> Write.
 
-    Uses SRTM 3Sec (per the reference PDF) rather than Landslide's
-    Copernicus 30m substitution. If step.esa.int's SRTM host proves flaky in
-    practice the way it initially did for Landslide, swap to Copernicus 30m
-    Global DEM the same way - but start faithful to the reference document."""
+    The reference PDF specifies "SRTM 3Sec (Auto Download)", but that DEM
+    name is not registered in this SNAP install ("The DEM 'SRTM 3Sec (Auto
+    Download)' is not supported", confirmed via a live run) - swapped to
+    Copernicus 30m Global DEM, the same substitution already proven working
+    in Landslide's own Terrain-Correction (snap_graph.py)."""
     return f"""<graph id="FloodTerrainCorrection">
   <version>1.0</version>{_read_node("read", source_dim)}
   <node id="tc">
@@ -152,7 +153,7 @@ def build_terrain_correction_graph(source_dim: str, output_dim: str) -> str:
     <sources><sourceProduct refid="read"/></sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
       <sourceBands>Sigma0_VV</sourceBands>
-      <demName>SRTM 3Sec (Auto Download)</demName>
+      <demName>Copernicus 30m Global DEM</demName>
       <demResamplingMethod>NEAREST_NEIGHBOUR</demResamplingMethod>
       <imgResamplingMethod>NEAREST_NEIGHBOUR</imgResamplingMethod>
       <pixelSpacingInMeter>10.0</pixelSpacingInMeter>
