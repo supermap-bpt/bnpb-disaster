@@ -156,6 +156,8 @@ export const translations = {
     landslideStage5: "Koreksi Medan (paralel)",
     landslideStage6: "Konversi ke dB (paralel)",
     landslideStage7: "Kolokasi & masker perubahan",
+    landslideDrawBbox: "Gambar bounding box",
+    landslideClearBbox: "Hapus bounding box",
 
     // Header nav
     navLogs: "Log Aktivitas",
@@ -334,6 +336,8 @@ export const translations = {
     landslideStage5: "Terrain Correction (parallel)",
     landslideStage6: "Linear to dB (parallel)",
     landslideStage7: "Collocate & change mask",
+    landslideDrawBbox: "Draw bounding box",
+    landslideClearBbox: "Clear bounding box",
 
     // Header nav
     navLogs: "Logs",
