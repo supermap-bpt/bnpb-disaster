@@ -149,8 +149,13 @@ export const translations = {
     landslideStatusCompleted: "Selesai",
     landslideStatusFailed: "Gagal",
     landslideStep: "Langkah",
-    landslideStage1: "Praproses pra & pasca-kejadian (paralel)",
-    landslideStage2: "Kolokasi & masker perubahan",
+    landslideStage1: "Terapkan File Orbit (paralel)",
+    landslideStage2: "Hapus Noise Termal (paralel)",
+    landslideStage3: "Kalibrasi (paralel)",
+    landslideStage4: "Filter Speckle (paralel)",
+    landslideStage5: "Koreksi Medan (paralel)",
+    landslideStage6: "Konversi ke dB (paralel)",
+    landslideStage7: "Kolokasi & masker perubahan",
 
     // Header nav
     navLogs: "Log Aktivitas",
@@ -322,8 +327,13 @@ export const translations = {
     landslideStatusCompleted: "Completed",
     landslideStatusFailed: "Failed",
     landslideStep: "Step",
-    landslideStage1: "Preprocess pre & post event (parallel)",
-    landslideStage2: "Collocate & change mask",
+    landslideStage1: "Apply Orbit File (parallel)",
+    landslideStage2: "Thermal Noise Removal (parallel)",
+    landslideStage3: "Calibration (parallel)",
+    landslideStage4: "Speckle Filtering (parallel)",
+    landslideStage5: "Terrain Correction (parallel)",
+    landslideStage6: "Linear to dB (parallel)",
+    landslideStage7: "Collocate & change mask",
 
     // Header nav
     navLogs: "Logs",
