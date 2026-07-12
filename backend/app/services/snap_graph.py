@@ -150,7 +150,11 @@ def build_speckle_graph(source_dim: str, output_dim: str) -> str:
 
 def build_terrain_correction_graph(source_dim: str, output_dim: str) -> str:
     """Step 5/6: Read -> Range-Doppler Terrain-Correction (Copernicus 30m DEM,
-    auto-UTM) -> Write."""
+    auto-UTM) -> Write.
+
+    Uses Copernicus 30m Global DEM (AWS-hosted, reliable) instead of SRTM 1Sec,
+    whose step.esa.int auto-download host is flaky and 404s tiles.
+    """
     return f"""<graph id="LandslideTerrainCorrection">
   <version>1.0</version>{_read_node("read", source_dim)}
   <node id="tc">
@@ -185,104 +189,6 @@ def build_db_graph(source_dim: str, output_dim: str) -> str:
 </graph>"""
 
 
-def build_preprocess_graph(
-    source_file: str,
-    output_dim: str,
-    aoi_bbox: list[float] | None = None,
-) -> str:
-    """DEPRECATED: Fused single-product preprocessing graph (will be split into 6 individual
-    graphs by Task 2). For backward compatibility, composes all 6 steps into one graph.
-
-    Stage 1/2 graph: the single-product chain (Read → [Subset] → Orbit → TNR →
-    Calibration → Speckle → Terrain-Correction → dB) written to a BEAM-DIMAP file.
-
-    ``source_file`` is a Sentinel-1 GRD ``.SAFE.zip``; ``output_dim`` is the target
-    ``.dim``. ``aoi_bbox`` optionally crops to [min_lon, min_lat, max_lon, max_lat].
-    """
-    aoi_wkt = _bbox_to_wkt(aoi_bbox) if aoi_bbox else None
-    orbit_source = "subset" if aoi_wkt else "read"
-    subset_node = ""
-    if aoi_wkt:
-        subset_node = f"""
-  <node id="subset">
-    <operator>Subset</operator>
-    <sources><sourceProduct refid="read"/></sources>
-    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <geoRegion>{escape(aoi_wkt)}</geoRegion>
-      <copyMetadata>true</copyMetadata>
-    </parameters>
-  </node>"""
-    return f"""<graph id="LandslidePreprocess">
-  <version>1.0</version>{_read_node("read", source_file)}{subset_node}
-  <node id="orbit">
-    <operator>Apply-Orbit-File</operator>
-    <sources><sourceProduct refid="{orbit_source}"/></sources>
-    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <orbitType>Sentinel Precise (Auto Download)</orbitType>
-      <polyDegree>3</polyDegree>
-      <continueOnFail>true</continueOnFail>
-    </parameters>
-  </node>
-  <node id="tnr">
-    <operator>ThermalNoiseRemoval</operator>
-    <sources><sourceProduct refid="orbit"/></sources>
-    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <selectedPolarisations>VH,VV</selectedPolarisations>
-      <removeThermalNoise>true</removeThermalNoise>
-      <outputNoise>false</outputNoise>
-    </parameters>
-  </node>
-  <node id="cal">
-    <operator>Calibration</operator>
-    <sources><sourceProduct refid="tnr"/></sources>
-    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <selectedPolarisations>VH,VV</selectedPolarisations>
-      <outputSigmaBand>true</outputSigmaBand>
-      <outputGammaBand>false</outputGammaBand>
-      <outputBetaBand>false</outputBetaBand>
-      <outputImageInComplex>false</outputImageInComplex>
-      <outputImageScaleInDb>false</outputImageScaleInDb>
-    </parameters>
-  </node>
-  <node id="speckle">
-    <operator>Speckle-Filter</operator>
-    <sources><sourceProduct refid="cal"/></sources>
-    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <sourceBands>Sigma0_VH,Sigma0_VV</sourceBands>
-      <filter>Refined Lee</filter>
-    </parameters>
-  </node>
-  <node id="tc">
-    <operator>Terrain-Correction</operator>
-    <sources><sourceProduct refid="speckle"/></sources>
-    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <sourceBands>Sigma0_VH,Sigma0_VV</sourceBands>
-      <demName>Copernicus 30m Global DEM</demName>
-      <demResamplingMethod>BILINEAR_INTERPOLATION</demResamplingMethod>
-      <imgResamplingMethod>BILINEAR_INTERPOLATION</imgResamplingMethod>
-      <pixelSpacingInMeter>10.0</pixelSpacingInMeter>
-      <mapProjection>AUTO:42001</mapProjection>
-      <nodataValueAtSea>false</nodataValueAtSea>
-    </parameters>
-  </node>
-  <node id="db">
-    <operator>LinearToFromdB</operator>
-    <sources><sourceProduct refid="tc"/></sources>
-    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <sourceBands>Sigma0_VH,Sigma0_VV</sourceBands>
-    </parameters>
-  </node>
-  <node id="write">
-    <operator>Write</operator>
-    <sources><sourceProduct refid="db"/></sources>
-    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <file>{escape(output_dim)}</file>
-      <formatName>BEAM-DIMAP</formatName>
-    </parameters>
-  </node>
-</graph>"""
-
-
 def build_change_detection_graph(
     pre_dim: str,
     post_dim: str,
@@ -293,7 +199,7 @@ def build_change_detection_graph(
     """Stage 3 graph: collocate the two preprocessed products, compute Δσ⁰ and the
     binary landslide masks, and write a multi-band BigTIFF GeoTIFF.
 
-    ``pre_dim`` / ``post_dim`` are the BEAM-DIMAP outputs of build_preprocess_graph.
+    ``pre_dim`` / ``post_dim`` are the BEAM-DIMAP outputs of build_terrain_correction_graph.
     ``water_threshold_db`` gates out water / radar shadow: a pixel can only be a
     landslide candidate if BOTH epochs' VV backscatter is above this level (land).
     """
