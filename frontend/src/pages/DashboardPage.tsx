@@ -5,8 +5,8 @@ import { useLanguage } from "@/context/LanguageContext";
 import type { TranslationKey } from "@/i18n/translations";
 
 const DASHBOARD_CARDS: { path: string; icon: typeof Globe; titleKey: TranslationKey; descKey: TranslationKey }[] = [
-  { path: "/find-satellite", icon: Globe, titleKey: "navFindSatellite", descKey: "findSatelliteDesc" },
-  { path: "/saved-satellite", icon: Bookmark, titleKey: "navSavedSatellite", descKey: "savedSatelliteDesc" },
+  { path: "/satellite-explorer", icon: Globe, titleKey: "navFindSatellite", descKey: "findSatelliteDesc" },
+  { path: "/pre-disaster/landslide", icon: Bookmark, titleKey: "navLandslide", descKey: "savedSatelliteDesc" },
   { path: "/pre-disaster", icon: Clock, titleKey: "navPreDisaster", descKey: "preDisasterDesc" },
   { path: "/during-disaster", icon: AlertTriangle, titleKey: "navDuringDisaster", descKey: "duringDisasterDesc" },
   { path: "/prediction-disaster", icon: TrendingUp, titleKey: "navPredictionDisaster", descKey: "predictionDisasterDesc" },

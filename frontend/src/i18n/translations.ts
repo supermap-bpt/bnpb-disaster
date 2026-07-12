@@ -23,6 +23,7 @@ export const translations = {
     navHistory: "History",
     navSettings: "Settings",
     navPreDisaster: "Pre Disaster",
+    navLandslide: "Landslide",
     navDuringDisaster: "During Disaster",
     navPredictionDisaster: "Prediction Disaster",
 
@@ -112,7 +113,7 @@ export const translations = {
     satelliteSaveFailed: "Gagal menyimpan satelit.",
 
     // SavedSatellitePage
-    savedSatellitesTitle: "Satelit Tersimpan",
+    savedSatellitesTitle: "Landslide Processing",
     savedSatellitesSubtitle: "Daftar pencarian satelit yang sudah disimpan",
     noSavedSatellites: "Belum ada satelit tersimpan.",
     loadingSavedSatellites: "Memuat satelit tersimpan...",
@@ -196,6 +197,7 @@ export const translations = {
     navHistory: "History",
     navSettings: "Settings",
     navPreDisaster: "Pre Disaster",
+    navLandslide: "Landslide",
     navDuringDisaster: "During Disaster",
     navPredictionDisaster: "Prediction Disaster",
 
@@ -285,7 +287,7 @@ export const translations = {
     satelliteSaveFailed: "Failed to save satellite.",
 
     // SavedSatellitePage
-    savedSatellitesTitle: "Saved Satellites",
+    savedSatellitesTitle: "Landslide Processing",
     savedSatellitesSubtitle: "List of saved satellites",
     noSavedSatellites: "No saved satellites yet.",
     loadingSavedSatellites: "Loading saved satellites...",

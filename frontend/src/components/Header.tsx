@@ -33,7 +33,6 @@ import { cn } from "@/lib/utils";
 import type { TranslationKey } from "@/i18n/translations";
 
 const SIMPLE_NAV_ITEMS: { path: string; key: TranslationKey; icon: typeof LayoutDashboard }[] = [
-  { path: "/pre-disaster", key: "navPreDisaster", icon: Clock },
   { path: "/during-disaster", key: "navDuringDisaster", icon: AlertTriangle },
   { path: "/prediction-disaster", key: "navPredictionDisaster", icon: TrendingUp },
 ];
@@ -52,7 +51,7 @@ function Header() {
   const { language, setLanguage, t } = useLanguage();
   const { pathname } = useLocation();
   const { notifications, unreadCount, markAllRead } = useActivityNotifications();
-  const satelliteExplorerActive = pathname === "/find-satellite" || pathname === "/saved-satellite";
+  const preDisasterActive = pathname === "/pre-disaster/landslide";
 
   return (
     <header className="sticky top-0 z-[1600] flex shrink-0 flex-col border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
@@ -157,20 +156,22 @@ function Header() {
           {t("navDashboard")}
         </Link>
 
+        <Link to="/satellite-explorer" className={navButtonClass(pathname === "/satellite-explorer")}>
+          <Globe className="h-4 w-4 shrink-0" />
+          {t("navSatelliteExplorer")}
+        </Link>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button type="button" className={navButtonClass(satelliteExplorerActive)}>
-              <Globe className="h-4 w-4 shrink-0" />
-              {t("navSatelliteExplorer")}
+            <button type="button" className={navButtonClass(preDisasterActive)}>
+              <Clock className="h-4 w-4 shrink-0" />
+              {t("navPreDisaster")}
               <ChevronDown className="h-3.5 w-3.5 shrink-0" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
             <DropdownMenuItem asChild>
-              <Link to="/find-satellite">{t("navFindSatellite")}</Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link to="/saved-satellite">{t("navSavedSatellite")}</Link>
+              <Link to="/pre-disaster/landslide">{t("navLandslide")}</Link>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

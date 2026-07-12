@@ -38,24 +38,40 @@ describe("App", () => {
     expect(screen.queryByText(/lihat di peta/i)).not.toBeInTheDocument();
   });
 
-  it("shows the 'Satellite Explorer' dropdown nav item", () => {
+  it("shows 'Satellite Explorer' as a direct nav link (no dropdown)", () => {
     render(<App />);
-    expect(screen.getByText(/satellite explorer/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /satellite explorer/i })).toHaveAttribute(
+      "href",
+      "/satellite-explorer"
+    );
   });
 
-  it("renders the map and sidebar on /find-satellite", () => {
-    goTo("/find-satellite");
+  it("renders the map and sidebar on /satellite-explorer", () => {
+    goTo("/satellite-explorer");
     render(<App />);
     expect(screen.getByTestId("sidebar")).toBeInTheDocument();
     expect(screen.getByTestId("map-view")).toBeInTheDocument();
   });
 
-  it("mobile drawer toggle opens the results/filter overlay on /find-satellite", () => {
-    goTo("/find-satellite");
+  it("mobile drawer toggle opens the results/filter overlay on /satellite-explorer", () => {
+    goTo("/satellite-explorer");
     render(<App />);
     const toggle = screen.getByRole("button", { name: /filter & hasil/i });
     fireEvent.click(toggle);
     expect(screen.getByTestId("sidebar")).toBeInTheDocument();
+  });
+
+  it("shows 'Pre Disaster' as a dropdown with a 'Landslide' item routing to the renamed Landslide Processing page", () => {
+    render(<App />);
+
+    const trigger = screen.getByRole("button", { name: /pre disaster/i });
+    fireEvent.click(trigger);
+    const landslideLink = screen.getByRole("link", { name: /landslide/i });
+    expect(landslideLink).toHaveAttribute("href", "/pre-disaster/landslide");
+
+    goTo("/pre-disaster/landslide");
+    render(<App />);
+    expect(screen.getByRole("heading", { name: /landslide processing/i })).toBeInTheDocument();
   });
 
   it("Dashboard cards link to the renamed disaster-management routes", () => {

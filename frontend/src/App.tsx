@@ -16,10 +16,10 @@ function AppShell() {
       <Header />
       <Routes>
         <Route path="/" element={<DashboardPage />} />
-        <Route path="/find-satellite" element={<FindSatellitePage />} />
-        <Route path="/saved-satellite" element={<SavedSatellitePage />} />
+        <Route path="/satellite-explorer" element={<FindSatellitePage />} />
         <Route path="/logs" element={<LogsPage />} />
         <Route path="/pre-disaster" element={<PlaceholderPage titleKey="navPreDisaster" />} />
+        <Route path="/pre-disaster/landslide" element={<SavedSatellitePage />} />
         <Route path="/during-disaster" element={<PlaceholderPage titleKey="navDuringDisaster" />} />
         <Route path="/prediction-disaster" element={<PlaceholderPage titleKey="navPredictionDisaster" />} />
       </Routes>
