@@ -9,7 +9,18 @@ vi.mock("react-leaflet", () => ({
   TileLayer: () => <div data-testid="tile-layer" />,
   GeoJSON: () => <div data-testid="geojson" />,
   ZoomControl: () => <div data-testid="zoom-control" />,
-  useMap: () => ({ fitBounds: vi.fn(), attributionControl: { setPrefix: vi.fn() } }),
+  useMap: () => ({
+    fitBounds: vi.fn(),
+    attributionControl: { setPrefix: vi.fn() },
+    dragging: { enable: vi.fn(), disable: vi.fn() },
+  }),
+  useMapEvents: () => ({
+    fitBounds: vi.fn(),
+    attributionControl: { setPrefix: vi.fn() },
+    dragging: { enable: vi.fn(), disable: vi.fn() },
+  }),
+  Rectangle: () => <div data-testid="rectangle" />,
+  Marker: () => <div data-testid="marker" />,
 }));
 
 vi.mock("@/api/client", () => ({

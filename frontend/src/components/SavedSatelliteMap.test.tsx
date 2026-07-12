@@ -1,8 +1,13 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import type { SavedSatelliteDetail } from "../api/client";
+import { LanguageProvider } from "../context/LanguageContext";
 import SavedSatelliteMap from "./SavedSatelliteMap";
+
+function renderMap(ui: ReactElement) {
+  return render(<LanguageProvider>{ui}</LanguageProvider>);
+}
 
 const fitBoundsMock = vi.fn();
 
@@ -15,7 +20,15 @@ vi.mock("react-leaflet", () => ({
   useMap: () => ({
     fitBounds: fitBoundsMock,
     attributionControl: { setPrefix: vi.fn() },
+    dragging: { enable: vi.fn(), disable: vi.fn() },
   }),
+  useMapEvents: () => ({
+    fitBounds: fitBoundsMock,
+    attributionControl: { setPrefix: vi.fn() },
+    dragging: { enable: vi.fn(), disable: vi.fn() },
+  }),
+  Rectangle: () => <div data-testid="rectangle" />,
+  Marker: () => <div data-testid="marker" />,
 }));
 
 const SAMPLE_DETAIL: SavedSatelliteDetail = {
@@ -44,14 +57,14 @@ const SAMPLE_DETAIL: SavedSatelliteDetail = {
 
 describe("SavedSatelliteMap", () => {
   it("renders a map with no footprint layer when nothing is selected", () => {
-    render(<SavedSatelliteMap selected={null} />);
+    renderMap(<SavedSatelliteMap selected={null} />);
 
     expect(screen.getByTestId("map-container")).toBeInTheDocument();
     expect(screen.queryByTestId("geojson")).not.toBeInTheDocument();
   });
 
   it("renders the footprint and zooms to it once a satellite is selected", () => {
-    render(<SavedSatelliteMap selected={SAMPLE_DETAIL} />);
+    renderMap(<SavedSatelliteMap selected={SAMPLE_DETAIL} />);
 
     expect(screen.getByTestId("geojson")).toBeInTheDocument();
     expect(fitBoundsMock).toHaveBeenCalledWith([
@@ -61,7 +74,7 @@ describe("SavedSatelliteMap", () => {
   });
 
   it("renders the satellite imagery overlay when a preview is available", () => {
-    render(
+    renderMap(
       <SavedSatelliteMap
         selected={{ ...SAMPLE_DETAIL, preview: "storage/satellites/sat-1/thumbnail.jpg" }}
       />
@@ -75,8 +88,30 @@ describe("SavedSatelliteMap", () => {
   });
 
   it("does not render an imagery overlay when there is no preview", () => {
-    render(<SavedSatelliteMap selected={SAMPLE_DETAIL} />);
+    renderMap(<SavedSatelliteMap selected={SAMPLE_DETAIL} />);
 
     expect(screen.queryByTestId("image-overlay")).not.toBeInTheDocument();
+  });
+
+  it("renders the address search and bbox draw tool", () => {
+    renderMap(<SavedSatelliteMap selected={null} />);
+
+    expect(screen.getByPlaceholderText(/cari alamat/i)).toBeInTheDocument();
+    expect(screen.getByTestId("bbox-draw-button")).toBeInTheDocument();
+  });
+
+  it("passes bbox/onBboxChange through to the draw tool", () => {
+    const onBboxChange = vi.fn();
+    renderMap(
+      <SavedSatelliteMap
+        selected={null}
+        bbox={[97.5, 4.0, 98.3, 5.0]}
+        onBboxChange={onBboxChange}
+      />
+    );
+
+    expect(screen.getByText("97.50, 4.00 → 98.30, 5.00")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("bbox-clear-button"));
+    expect(onBboxChange).toHaveBeenCalledWith(null);
   });
 });
