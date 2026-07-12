@@ -23,98 +23,6 @@ from __future__ import annotations
 from xml.sax.saxutils import escape
 
 
-def _chain_nodes(prefix: str, source_file: str, aoi_wkt: str | None) -> str:
-    """Single-product preprocessing chain. ``prefix`` (``pre``/``post``) namespaces
-    every node id so the two chains never collide in one graph.
-
-    When ``aoi_wkt`` is given, a Subset (geoRegion) crop is inserted as the very
-    first operation (right after Read, before Apply-Orbit-File) so orbit and the
-    expensive TNR/Calibration/Speckle/Terrain-Correction steps all run only over
-    the area of interest - the biggest speed win for a small AOI."""
-    src = escape(source_file)
-    # orbit sources from the crop when an AOI is set, else directly from read.
-    orbit_source = f"{prefix}_subset" if aoi_wkt else f"{prefix}_read"
-    subset_node = ""
-    if aoi_wkt:
-        subset_node = f"""
-  <node id="{prefix}_subset">
-    <operator>Subset</operator>
-    <sources><sourceProduct refid="{prefix}_read"/></sources>
-    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <geoRegion>{escape(aoi_wkt)}</geoRegion>
-      <copyMetadata>true</copyMetadata>
-    </parameters>
-  </node>"""
-    return f"""
-  <node id="{prefix}_read">
-    <operator>Read</operator>
-    <sources/>
-    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <file>{src}</file>
-    </parameters>
-  </node>{subset_node}
-  <node id="{prefix}_orbit">
-    <operator>Apply-Orbit-File</operator>
-    <sources><sourceProduct refid="{orbit_source}"/></sources>
-    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <orbitType>Sentinel Precise (Auto Download)</orbitType>
-      <polyDegree>3</polyDegree>
-      <continueOnFail>true</continueOnFail>
-    </parameters>
-  </node>
-  <node id="{prefix}_tnr">
-    <operator>ThermalNoiseRemoval</operator>
-    <sources><sourceProduct refid="{prefix}_orbit"/></sources>
-    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <selectedPolarisations>VH,VV</selectedPolarisations>
-      <removeThermalNoise>true</removeThermalNoise>
-      <outputNoise>false</outputNoise>
-    </parameters>
-  </node>
-  <node id="{prefix}_cal">
-    <operator>Calibration</operator>
-    <sources><sourceProduct refid="{prefix}_tnr"/></sources>
-    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <selectedPolarisations>VH,VV</selectedPolarisations>
-      <outputSigmaBand>true</outputSigmaBand>
-      <outputGammaBand>false</outputGammaBand>
-      <outputBetaBand>false</outputBetaBand>
-      <outputImageInComplex>false</outputImageInComplex>
-      <outputImageScaleInDb>false</outputImageScaleInDb>
-    </parameters>
-  </node>
-  <node id="{prefix}_speckle">
-    <operator>Speckle-Filter</operator>
-    <sources><sourceProduct refid="{prefix}_cal"/></sources>
-    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <sourceBands>Sigma0_VH,Sigma0_VV</sourceBands>
-      <filter>Refined Lee</filter>
-    </parameters>
-  </node>
-  <node id="{prefix}_tc">
-    <operator>Terrain-Correction</operator>
-    <sources><sourceProduct refid="{prefix}_speckle"/></sources>
-    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <sourceBands>Sigma0_VH,Sigma0_VV</sourceBands>
-      <!-- Copernicus 30m Global DEM (AWS-hosted, reliable) instead of SRTM 1Sec,
-           whose step.esa.int auto-download host is flaky and 404s tiles. -->
-      <demName>Copernicus 30m Global DEM</demName>
-      <demResamplingMethod>BILINEAR_INTERPOLATION</demResamplingMethod>
-      <imgResamplingMethod>BILINEAR_INTERPOLATION</imgResamplingMethod>
-      <pixelSpacingInMeter>10.0</pixelSpacingInMeter>
-      <mapProjection>AUTO:42001</mapProjection>
-      <nodataValueAtSea>false</nodataValueAtSea>
-    </parameters>
-  </node>
-  <node id="{prefix}_db">
-    <operator>LinearToFromdB</operator>
-    <sources><sourceProduct refid="{prefix}_tc"/></sources>
-    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <sourceBands>Sigma0_VH,Sigma0_VV</sourceBands>
-    </parameters>
-  </node>"""
-
-
 def _band_maths_node(name: str, expression: str) -> str:
     return f"""
     <targetBand>
@@ -135,23 +43,238 @@ def _bbox_to_wkt(bbox: list[float]) -> str:
     return f"POLYGON (({ring}))"
 
 
+def _read_node(node_id: str, source_file: str) -> str:
+    return f"""
+  <node id="{node_id}">
+    <operator>Read</operator>
+    <sources/>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <file>{escape(source_file)}</file>
+    </parameters>
+  </node>"""
+
+
+def _write_node(source_refid: str, output_dim: str) -> str:
+    return f"""
+  <node id="write">
+    <operator>Write</operator>
+    <sources><sourceProduct refid="{source_refid}"/></sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <file>{escape(output_dim)}</file>
+      <formatName>BEAM-DIMAP</formatName>
+    </parameters>
+  </node>"""
+
+
+def build_orbit_graph(source_file: str, output_dim: str, aoi_bbox: list[float] | None = None) -> str:
+    """Step 1/6: Read [+ Subset crop to AOI] -> Apply-Orbit-File -> Write.
+    `source_file` is the original Sentinel-1 .SAFE.zip. The AOI crop (when
+    given) happens here, first - so every later, more expensive operator only
+    ever processes the cropped area, same as the old fused-graph ordering."""
+    aoi_wkt = _bbox_to_wkt(aoi_bbox) if aoi_bbox else None
+    orbit_source = "subset" if aoi_wkt else "read"
+    subset_node = ""
+    if aoi_wkt:
+        subset_node = f"""
+  <node id="subset">
+    <operator>Subset</operator>
+    <sources><sourceProduct refid="read"/></sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <geoRegion>{escape(aoi_wkt)}</geoRegion>
+      <copyMetadata>true</copyMetadata>
+    </parameters>
+  </node>"""
+    return f"""<graph id="LandslideOrbit">
+  <version>1.0</version>{_read_node("read", source_file)}{subset_node}
+  <node id="orbit">
+    <operator>Apply-Orbit-File</operator>
+    <sources><sourceProduct refid="{orbit_source}"/></sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <orbitType>Sentinel Precise (Auto Download)</orbitType>
+      <polyDegree>3</polyDegree>
+      <continueOnFail>true</continueOnFail>
+    </parameters>
+  </node>{_write_node("orbit", output_dim)}
+</graph>"""
+
+
+def build_tnr_graph(source_dim: str, output_dim: str) -> str:
+    """Step 2/6: Read -> ThermalNoiseRemoval -> Write."""
+    return f"""<graph id="LandslideTnr">
+  <version>1.0</version>{_read_node("read", source_dim)}
+  <node id="tnr">
+    <operator>ThermalNoiseRemoval</operator>
+    <sources><sourceProduct refid="read"/></sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <selectedPolarisations>VH,VV</selectedPolarisations>
+      <removeThermalNoise>true</removeThermalNoise>
+      <outputNoise>false</outputNoise>
+    </parameters>
+  </node>{_write_node("tnr", output_dim)}
+</graph>"""
+
+
+def build_calibration_graph(source_dim: str, output_dim: str) -> str:
+    """Step 3/6: Read -> Calibration (Sigma0 only) -> Write."""
+    return f"""<graph id="LandslideCalibration">
+  <version>1.0</version>{_read_node("read", source_dim)}
+  <node id="cal">
+    <operator>Calibration</operator>
+    <sources><sourceProduct refid="read"/></sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <selectedPolarisations>VH,VV</selectedPolarisations>
+      <outputSigmaBand>true</outputSigmaBand>
+      <outputGammaBand>false</outputGammaBand>
+      <outputBetaBand>false</outputBetaBand>
+      <outputImageInComplex>false</outputImageInComplex>
+      <outputImageScaleInDb>false</outputImageScaleInDb>
+    </parameters>
+  </node>{_write_node("cal", output_dim)}
+</graph>"""
+
+
+def build_speckle_graph(source_dim: str, output_dim: str) -> str:
+    """Step 4/6: Read -> Speckle-Filter (Refined Lee) -> Write."""
+    return f"""<graph id="LandslideSpeckle">
+  <version>1.0</version>{_read_node("read", source_dim)}
+  <node id="speckle">
+    <operator>Speckle-Filter</operator>
+    <sources><sourceProduct refid="read"/></sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <sourceBands>Sigma0_VH,Sigma0_VV</sourceBands>
+      <filter>Refined Lee</filter>
+    </parameters>
+  </node>{_write_node("speckle", output_dim)}
+</graph>"""
+
+
+def build_terrain_correction_graph(source_dim: str, output_dim: str) -> str:
+    """Step 5/6: Read -> Range-Doppler Terrain-Correction (Copernicus 30m DEM,
+    auto-UTM) -> Write."""
+    return f"""<graph id="LandslideTerrainCorrection">
+  <version>1.0</version>{_read_node("read", source_dim)}
+  <node id="tc">
+    <operator>Terrain-Correction</operator>
+    <sources><sourceProduct refid="read"/></sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <sourceBands>Sigma0_VH,Sigma0_VV</sourceBands>
+      <demName>Copernicus 30m Global DEM</demName>
+      <demResamplingMethod>BILINEAR_INTERPOLATION</demResamplingMethod>
+      <imgResamplingMethod>BILINEAR_INTERPOLATION</imgResamplingMethod>
+      <pixelSpacingInMeter>10.0</pixelSpacingInMeter>
+      <mapProjection>AUTO:42001</mapProjection>
+      <nodataValueAtSea>false</nodataValueAtSea>
+    </parameters>
+  </node>{_write_node("tc", output_dim)}
+</graph>"""
+
+
+def build_db_graph(source_dim: str, output_dim: str) -> str:
+    """Step 6/6: Read -> LinearToFromdB -> Write. Output bands
+    (Sigma0_VH_db/Sigma0_VV_db) are what build_change_detection_graph's
+    Collocate step consumes."""
+    return f"""<graph id="LandslideDb">
+  <version>1.0</version>{_read_node("read", source_dim)}
+  <node id="db">
+    <operator>LinearToFromdB</operator>
+    <sources><sourceProduct refid="read"/></sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <sourceBands>Sigma0_VH,Sigma0_VV</sourceBands>
+    </parameters>
+  </node>{_write_node("db", output_dim)}
+</graph>"""
+
+
 def build_preprocess_graph(
     source_file: str,
     output_dim: str,
     aoi_bbox: list[float] | None = None,
 ) -> str:
-    """Stage 1/2 graph: the single-product chain (Read → [Subset] → Orbit → TNR →
+    """DEPRECATED: Fused single-product preprocessing graph (will be split into 6 individual
+    graphs by Task 2). For backward compatibility, composes all 6 steps into one graph.
+
+    Stage 1/2 graph: the single-product chain (Read → [Subset] → Orbit → TNR →
     Calibration → Speckle → Terrain-Correction → dB) written to a BEAM-DIMAP file.
 
     ``source_file`` is a Sentinel-1 GRD ``.SAFE.zip``; ``output_dim`` is the target
     ``.dim``. ``aoi_bbox`` optionally crops to [min_lon, min_lat, max_lon, max_lat].
     """
     aoi_wkt = _bbox_to_wkt(aoi_bbox) if aoi_bbox else None
+    orbit_source = "subset" if aoi_wkt else "read"
+    subset_node = ""
+    if aoi_wkt:
+        subset_node = f"""
+  <node id="subset">
+    <operator>Subset</operator>
+    <sources><sourceProduct refid="read"/></sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <geoRegion>{escape(aoi_wkt)}</geoRegion>
+      <copyMetadata>true</copyMetadata>
+    </parameters>
+  </node>"""
     return f"""<graph id="LandslidePreprocess">
-  <version>1.0</version>{_chain_nodes("p", source_file, aoi_wkt)}
+  <version>1.0</version>{_read_node("read", source_file)}{subset_node}
+  <node id="orbit">
+    <operator>Apply-Orbit-File</operator>
+    <sources><sourceProduct refid="{orbit_source}"/></sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <orbitType>Sentinel Precise (Auto Download)</orbitType>
+      <polyDegree>3</polyDegree>
+      <continueOnFail>true</continueOnFail>
+    </parameters>
+  </node>
+  <node id="tnr">
+    <operator>ThermalNoiseRemoval</operator>
+    <sources><sourceProduct refid="orbit"/></sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <selectedPolarisations>VH,VV</selectedPolarisations>
+      <removeThermalNoise>true</removeThermalNoise>
+      <outputNoise>false</outputNoise>
+    </parameters>
+  </node>
+  <node id="cal">
+    <operator>Calibration</operator>
+    <sources><sourceProduct refid="tnr"/></sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <selectedPolarisations>VH,VV</selectedPolarisations>
+      <outputSigmaBand>true</outputSigmaBand>
+      <outputGammaBand>false</outputGammaBand>
+      <outputBetaBand>false</outputBetaBand>
+      <outputImageInComplex>false</outputImageInComplex>
+      <outputImageScaleInDb>false</outputImageScaleInDb>
+    </parameters>
+  </node>
+  <node id="speckle">
+    <operator>Speckle-Filter</operator>
+    <sources><sourceProduct refid="cal"/></sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <sourceBands>Sigma0_VH,Sigma0_VV</sourceBands>
+      <filter>Refined Lee</filter>
+    </parameters>
+  </node>
+  <node id="tc">
+    <operator>Terrain-Correction</operator>
+    <sources><sourceProduct refid="speckle"/></sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <sourceBands>Sigma0_VH,Sigma0_VV</sourceBands>
+      <demName>Copernicus 30m Global DEM</demName>
+      <demResamplingMethod>BILINEAR_INTERPOLATION</demResamplingMethod>
+      <imgResamplingMethod>BILINEAR_INTERPOLATION</imgResamplingMethod>
+      <pixelSpacingInMeter>10.0</pixelSpacingInMeter>
+      <mapProjection>AUTO:42001</mapProjection>
+      <nodataValueAtSea>false</nodataValueAtSea>
+    </parameters>
+  </node>
+  <node id="db">
+    <operator>LinearToFromdB</operator>
+    <sources><sourceProduct refid="tc"/></sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <sourceBands>Sigma0_VH,Sigma0_VV</sourceBands>
+    </parameters>
+  </node>
   <node id="write">
     <operator>Write</operator>
-    <sources><sourceProduct refid="p_db"/></sources>
+    <sources><sourceProduct refid="db"/></sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
       <file>{escape(output_dim)}</file>
       <formatName>BEAM-DIMAP</formatName>
