@@ -3,6 +3,7 @@ import { Toaster } from "sonner";
 import { GISProvider } from "./context/GISContext";
 import { LanguageProvider } from "./context/LanguageContext";
 import { ActivityNotificationsProvider } from "./context/ActivityNotificationsContext";
+import { PreDisasterMenuProvider } from "./context/PreDisasterMenuContext";
 import Header from "./components/Header";
 import DashboardPage from "./pages/DashboardPage";
 import FindSatellitePage from "./pages/FindSatellitePage";
@@ -33,10 +34,12 @@ function App() {
     <LanguageProvider>
       <GISProvider>
         <ActivityNotificationsProvider>
-          <BrowserRouter>
-            <AppShell />
-          </BrowserRouter>
-          <Toaster richColors position="top-right" />
+          <PreDisasterMenuProvider>
+            <BrowserRouter>
+              <AppShell />
+            </BrowserRouter>
+            <Toaster richColors position="top-right" />
+          </PreDisasterMenuProvider>
         </ActivityNotificationsProvider>
       </GISProvider>
     </LanguageProvider>

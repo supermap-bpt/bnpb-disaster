@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { LanguageProvider } from "@/context/LanguageContext";
 import { ActivityNotificationsProvider } from "@/context/ActivityNotificationsContext";
+import { PreDisasterMenuProvider } from "@/context/PreDisasterMenuContext";
 import Header from "./Header";
 
 vi.mock("@/api/client", () => ({
@@ -19,7 +20,9 @@ function Providers({ children }: { children: ReactNode }) {
   return (
     <MemoryRouter>
       <LanguageProvider>
-        <ActivityNotificationsProvider>{children}</ActivityNotificationsProvider>
+        <ActivityNotificationsProvider>
+          <PreDisasterMenuProvider>{children}</PreDisasterMenuProvider>
+        </ActivityNotificationsProvider>
       </LanguageProvider>
     </MemoryRouter>
   );

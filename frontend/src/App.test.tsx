@@ -89,12 +89,11 @@ describe("App", () => {
     );
   });
 
-  it("Dashboard's Pre Disaster card opens the Pre Disaster dropdown directly instead of navigating", () => {
+  it("Dashboard's Pre Disaster card opens the header's Pre Disaster dropdown directly instead of navigating", () => {
     render(<App />);
     const main = within(screen.getByRole("main"));
     const card = main.getByRole("button", { name: /pre disaster/i });
 
-    fireEvent.pointerDown(card, { button: 0, ctrlKey: false });
     fireEvent.click(card);
 
     const landslideItem = screen.getByRole("menuitem", { name: /^landslide$/i });

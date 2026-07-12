@@ -29,6 +29,7 @@ import {
 import { useTheme } from "@/hooks/useTheme";
 import { useLanguage } from "@/context/LanguageContext";
 import { useActivityNotifications } from "@/context/ActivityNotificationsContext";
+import { usePreDisasterMenu } from "@/context/PreDisasterMenuContext";
 import { cn } from "@/lib/utils";
 import type { TranslationKey } from "@/i18n/translations";
 
@@ -51,6 +52,7 @@ function Header() {
   const { language, setLanguage, t } = useLanguage();
   const { pathname } = useLocation();
   const { notifications, unreadCount, markAllRead } = useActivityNotifications();
+  const { isOpen: isPreDisasterMenuOpen, setIsOpen: setPreDisasterMenuOpen } = usePreDisasterMenu();
   const preDisasterActive = pathname === "/pre-disaster/landslide" || pathname === "/pre-disaster/flood";
 
   return (
@@ -161,7 +163,7 @@ function Header() {
           {t("navSatelliteExplorer")}
         </Link>
 
-        <DropdownMenu>
+        <DropdownMenu open={isPreDisasterMenuOpen} onOpenChange={setPreDisasterMenuOpen}>
           <DropdownMenuTrigger asChild>
             <button type="button" className={navButtonClass(preDisasterActive)}>
               <Clock className="h-4 w-4 shrink-0" />
