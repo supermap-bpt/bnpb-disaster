@@ -61,12 +61,14 @@ describe("App", () => {
     expect(screen.getByTestId("sidebar")).toBeInTheDocument();
   });
 
-  it("shows 'Pre Disaster' as a dropdown with a 'Landslide' item routing to the renamed Landslide Processing page", () => {
+  it("shows 'Pre Disaster' as a nav dropdown with a 'Landslide' item routing to the renamed Landslide Processing page", () => {
     render(<App />);
 
-    const trigger = screen.getByRole("button", { name: /pre disaster/i });
+    const nav = within(screen.getByRole("navigation"));
+    const trigger = nav.getByRole("button", { name: /^pre disaster$/i });
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
     fireEvent.click(trigger);
-    const landslideLink = screen.getByRole("link", { name: /landslide/i });
+    const landslideLink = screen.getByRole("menuitem", { name: /^landslide$/i });
     expect(landslideLink).toHaveAttribute("href", "/pre-disaster/landslide");
 
     goTo("/pre-disaster/landslide");
@@ -77,7 +79,6 @@ describe("App", () => {
   it("Dashboard cards link to the renamed disaster-management routes", () => {
     render(<App />);
     const main = within(screen.getByRole("main"));
-    expect(main.getByRole("link", { name: /pre disaster/i })).toHaveAttribute("href", "/pre-disaster");
     expect(main.getByRole("link", { name: /during disaster/i })).toHaveAttribute(
       "href",
       "/during-disaster"
@@ -88,10 +89,18 @@ describe("App", () => {
     );
   });
 
-  it("navigating to /pre-disaster shows the renamed placeholder page", () => {
-    goTo("/pre-disaster");
+  it("Dashboard's Pre Disaster card opens the Pre Disaster dropdown directly instead of navigating", () => {
     render(<App />);
-    expect(screen.getByRole("heading", { name: /pre disaster/i })).toBeInTheDocument();
+    const main = within(screen.getByRole("main"));
+    const card = main.getByRole("button", { name: /pre disaster/i });
+
+    fireEvent.pointerDown(card, { button: 0, ctrlKey: false });
+    fireEvent.click(card);
+
+    const landslideItem = screen.getByRole("menuitem", { name: /^landslide$/i });
+    const floodItem = screen.getByRole("menuitem", { name: /^flood$/i });
+    expect(landslideItem).toHaveAttribute("href", "/pre-disaster/landslide");
+    expect(floodItem).toHaveAttribute("href", "/pre-disaster/flood");
   });
 
   it("mounts the activity notifications provider (polls the logs endpoint on load)", async () => {
@@ -102,7 +111,8 @@ describe("App", () => {
   it("shows 'Flood' as a second item in the Pre Disaster dropdown, routing to the renamed Flood page", () => {
     render(<App />);
 
-    const trigger = screen.getByRole("button", { name: /pre disaster/i });
+    const nav = within(screen.getByRole("navigation"));
+    const trigger = nav.getByRole("button", { name: /^pre disaster$/i });
     fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
     fireEvent.click(trigger);
     const floodLink = screen.getByRole("menuitem", { name: /^flood$/i });

@@ -19,7 +19,6 @@ function AppShell() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/satellite-explorer" element={<FindSatellitePage />} />
         <Route path="/logs" element={<LogsPage />} />
-        <Route path="/pre-disaster" element={<PlaceholderPage titleKey="navPreDisaster" />} />
         <Route path="/pre-disaster/landslide" element={<SavedSatellitePage />} />
         <Route path="/pre-disaster/flood" element={<FloodPage />} />
         <Route path="/during-disaster" element={<PlaceholderPage titleKey="navDuringDisaster" />} />
