@@ -267,6 +267,66 @@ export async function fetchLandslidePreview(id: string): Promise<{ bounds: [numb
   return parseJsonOrThrow<{ bounds: [number, number, number, number] }>(response);
 }
 
+export interface FloodJob {
+  id: string;
+  name: string;
+  satelliteId: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  progress: number;
+  message: string | null;
+  stage: string | null;
+  stageIndex: number;
+  totalStages: number;
+  thresholdSigma0: number;
+  hasResult: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function processFlood(
+  satelliteId: string,
+  aoi?: [number, number, number, number],
+): Promise<FloodJob> {
+  const url = `${API_BASE_URL}/api/flood/process`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ satelliteId, aoi }),
+  });
+  return parseJsonOrThrow<FloodJob>(response);
+}
+
+export async function fetchFloodJobs(): Promise<{ items: FloodJob[]; total: number }> {
+  const url = `${API_BASE_URL}/api/flood/jobs`;
+  const response = await fetch(url);
+  return parseJsonOrThrow<{ items: FloodJob[]; total: number }>(response);
+}
+
+export async function deleteFloodJob(id: string): Promise<{ success: boolean }> {
+  const url = `${API_BASE_URL}/api/flood/jobs/${encodeURIComponent(id)}`;
+  const response = await fetch(url, { method: "DELETE" });
+  return parseJsonOrThrow<{ success: boolean }>(response);
+}
+
+export function getFloodResultUrl(id: string): string {
+  return `${API_BASE_URL}/api/flood/jobs/${encodeURIComponent(id)}/result`;
+}
+
+export function getFloodPreviewImageUrl(id: string): string {
+  return `${API_BASE_URL}/api/flood/jobs/${encodeURIComponent(id)}/preview.png`;
+}
+
+export function getFloodKmzUrl(id: string): string {
+  return `${API_BASE_URL}/api/flood/jobs/${encodeURIComponent(id)}/kmz`;
+}
+
+// bounds = [south, west, north, east]
+export async function fetchFloodPreview(id: string): Promise<{ bounds: [number, number, number, number] }> {
+  const url = `${API_BASE_URL}/api/flood/jobs/${encodeURIComponent(id)}/preview`;
+  const response = await fetch(url);
+  return parseJsonOrThrow<{ bounds: [number, number, number, number] }>(response);
+}
+
 export interface ActivityLogEntry {
   id: string;
   action: string;
