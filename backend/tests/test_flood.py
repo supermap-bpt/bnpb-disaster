@@ -2,9 +2,14 @@
 
 Simpler than test_landslide.py's equivalent: there's no parallel pre/post
 track or barrier-sync logic to test here, since Flood processes exactly one
-product. Reuses landslide.py's already-tested _run_gpt_stage/
-_run_gpt_process_blocking/_verify_snap_gpt directly (not re-tested here -
-see test_landslide.py for their own coverage)."""
+product. Reuses landslide.py's already-tested _run_gpt_process_blocking/
+_verify_snap_gpt directly (not re-tested here - see test_landslide.py for
+their own coverage). _run_gpt_stage is flood-local (see module docstring in
+flood.py): it must NOT be landslide's version, since landslide's STAGE_NAMES/
+TOTAL_STAGES/_update_job are hardcoded to landslide's own 7-stage pipeline and
+landslide_jobs table - calling landslide's _run_gpt_stage with flood's
+stage_index=7 (its 8th and final stage) raises IndexError."""
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -58,6 +63,50 @@ def fake_update_job(monkeypatch):
 
     monkeypatch.setattr(flood, "_update_job", _fake_update_job)
     return calls
+
+
+async def test_run_gpt_stage_handles_final_mask_stage_without_indexerror(monkeypatch, fake_update_job):
+    """Regression test for the critical bug: flood.py used to import
+    _run_gpt_stage from landslide.py instead of defining its own. Landslide's
+    version indexes into landslide.STAGE_NAMES (only 7 entries, indices 0-6),
+    so calling it for flood's stage_index=7 (the final Band Maths/mask stage,
+    flood has 8 stages) raised IndexError - crashing every flood job on its
+    last stage. flood._run_gpt_stage must be flood-local and use flood's own
+    8-entry STAGE_NAMES/TOTAL_STAGES and flood's own _update_job
+    (FloodJobRepository), not landslide's."""
+
+    def fake_blocking(job_id, label, gpt_path, graph_path, report_progress):
+        report_progress(50)
+        report_progress(100)
+        return True, ["done."]
+
+    monkeypatch.setattr(flood, "_run_gpt_process_blocking", fake_blocking)
+    log = FakeLog()
+
+    ok, tail = await flood._run_gpt_stage(
+        job_id="job-1", log=log, gpt_path="gpt", graph_path=Path("g.xml"), stage_index=7
+    )
+    await asyncio.sleep(0.05)
+
+    assert ok is True
+    assert tail == ["done."]
+
+    # Progress updates must land on flood's own _update_job (patched by the
+    # fake_update_job fixture below) with FLOOD's stage name/index - not
+    # landslide's, and not silently no-op against the wrong table.
+    stage_update_calls = [c for c in fake_update_job if "stage" in c]
+    assert stage_update_calls, "expected at least one _update_job call carrying a stage field"
+    assert stage_update_calls[0]["stage"] == flood.STAGE_MASK
+    assert stage_update_calls[0]["stage_index"] == 7
+
+    progress_update_calls = [c for c in fake_update_job if "progress" in c]
+    assert progress_update_calls, "expected at least one _update_job call carrying a progress field"
+    # TOTAL_STAGES=8, stage_index=7: overall = (7 + pct/100) / 8 * 100, capped at 99.
+    # 50% -> (7.5/8)*100 = 93 ; 100% -> capped at 99 until the job confirms completion.
+    assert [c["progress"] for c in progress_update_calls] == [93, 99]
+
+    reported_overall = [progress for progress, _message in log.progress_calls]
+    assert reported_overall == [93, 99]
 
 
 def test_stage_names_and_total_stages_reflect_the_eight_stage_pipeline():

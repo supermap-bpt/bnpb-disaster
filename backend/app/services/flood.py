@@ -4,12 +4,23 @@ over a single Sentinel-1 GRD product (unlike landslide.py's pre/post pair) -
 needed, since there is only one product).
 
 Reuses landslide.py's already-generic, already-tested subprocess machinery
-directly: _verify_snap_gpt (gpt binary sanity check), _run_gpt_process_blocking
-(the classic-subprocess-via-thread-executor pattern - the root-cause fix for
-asyncio.create_subprocess_exec's Windows NotImplementedError), and
-_run_gpt_stage (single-track per-stage progress scaling). None of these are
+directly: _verify_snap_gpt (gpt binary sanity check) and
+_run_gpt_process_blocking (the classic-subprocess-via-thread-executor pattern -
+the root-cause fix for asyncio.create_subprocess_exec's Windows
+NotImplementedError, plus "NN%" progress-marker parsing). Neither of those is
 Landslide-specific - importing them here avoids duplicating the same
-subprocess/progress-scaling logic in a second file.
+subprocess/progress-parsing logic in a second file.
+
+_run_gpt_stage, by contrast, is defined locally below rather than imported:
+landslide's version hardcodes references to landslide's own module-level
+STAGE_NAMES (7 entries)/TOTAL_STAGES(7) and landslide's own _update_job
+(writes via LandslideJobRepository). Flood has 8 stages, so calling
+landslide's version for flood's stage_index=7 (the final Band Maths/mask
+stage) raised IndexError - and even for stages 0-6, progress writes went to
+LandslideJobRepository against a flood job's id, matching no row and
+silently no-op'ing. The local _run_gpt_stage here is functionally identical
+to landslide's (same progress-scaling math, same executor-thread pattern)
+but closes over FLOOD's own STAGE_NAMES/TOTAL_STAGES/_update_job.
 """
 import asyncio
 import logging
@@ -34,7 +45,6 @@ from app.services.flood_graph import (
 from app.services.landslide import (
     _GPT_INSTALL_HINT,
     _run_gpt_process_blocking,
-    _run_gpt_stage,
     _verify_snap_gpt,
 )
 
@@ -104,6 +114,59 @@ async def _resolve_product_zip(satellite_id: uuid.UUID) -> Path | None:
             return None
         path = Path(record.product_file_path)
         return path if path.exists() else None
+
+
+async def _run_gpt_stage(
+    job_id: uuid.UUID,
+    log,
+    gpt_path: str,
+    graph_path: Path,
+    stage_index: int,
+) -> tuple[bool, list[str]]:
+    """Run one gpt graph, streaming its progress into the job scaled to the overall
+    pipeline (each stage owns 1/TOTAL_STAGES of the 0-100 bar). Returns (ok, tail).
+
+    Flood-local counterpart to landslide._run_gpt_stage - see this module's
+    docstring for why this can't just import landslide's version (it's
+    hardcoded to landslide's own 7-stage STAGE_NAMES/TOTAL_STAGES and writes
+    via LandslideJobRepository). This closes over FLOOD's STAGE_NAMES/
+    TOTAL_STAGES/_update_job instead; the progress-percent parsing itself
+    still happens inside the genuinely-generic _run_gpt_process_blocking,
+    reused as-is from landslide.py."""
+    stage_name = STAGE_NAMES[stage_index]
+    await _update_job(
+        job_id,
+        status="processing",
+        stage=stage_name,
+        stage_index=stage_index,
+        message=f"{stage_name}…",
+    )
+    logger.info("[flood %s] stage %s/%s: %s", job_id, stage_index + 1, TOTAL_STAGES, stage_name)
+
+    loop = asyncio.get_running_loop()
+    last_reported = -1
+
+    def report_progress(stage_pct: int) -> None:
+        # Called from the executor's worker thread, not the event loop thread.
+        nonlocal last_reported
+        # Scale this stage's 0-100 into its slice of the overall bar; cap at 99
+        # until the whole job confirms completion.
+        overall = min(int((stage_index + stage_pct / 100) / TOTAL_STAGES * 100), 99)
+        if overall >= last_reported + 2:
+            last_reported = overall
+            message = f"{stage_name}… {stage_pct}%"
+
+            async def _post() -> None:
+                await _update_job(job_id, progress=overall, message=message)
+                await log.set_progress(overall, message)
+
+            asyncio.run_coroutine_threadsafe(_post(), loop)
+
+    ok, tail = await loop.run_in_executor(
+        None, _run_gpt_process_blocking, job_id, stage_name, gpt_path, graph_path, report_progress
+    )
+    logger.info("[flood %s] stage %s exited ok=%s", job_id, stage_index + 1, ok)
+    return ok, tail
 
 
 async def run_flood_job(

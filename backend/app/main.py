@@ -50,6 +50,7 @@ app = FastAPI(
         {"name": "Satellites", "description": "Saved (bookmarked) satellite products - CRUD over PostgreSQL."},
         {"name": "Logs", "description": "Activity log entries for Save/Download/Delete operations."},
         {"name": "Landslide", "description": "SNAP SAR change-detection jobs for landslide mapping."},
+        {"name": "Flood", "description": "SNAP SAR flood-extent detection jobs."},
     ],
 )
 

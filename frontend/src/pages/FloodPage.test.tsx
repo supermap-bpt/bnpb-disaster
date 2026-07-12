@@ -35,12 +35,20 @@ vi.mock("@/api/client", () => ({
   deleteSavedSatellite: vi.fn(),
   retryFileDownload: vi.fn(),
   processFlood: vi.fn(),
+  fetchFloodJobs: vi.fn(),
+  deleteFloodJob: vi.fn(),
+  fetchFloodPreview: vi.fn(),
   getSavedSatelliteThumbnailUrl: (path: string) => `http://localhost:8000/${path}`,
   getSavedSatelliteDownloadFileUrl: (id: string) => `http://localhost:8000/api/satellites/${id}/download-file`,
+  getFloodResultUrl: (id: string) => `http://localhost:8000/api/flood/jobs/${id}/result`,
+  getFloodPreviewImageUrl: (id: string) => `http://localhost:8000/api/flood/jobs/${id}/preview.png`,
+  getFloodKmzUrl: (id: string) => `http://localhost:8000/api/flood/jobs/${id}/kmz`,
 }));
 
 import {
+  deleteFloodJob,
   deleteSavedSatellite,
+  fetchFloodJobs,
   fetchSavedSatelliteDetail,
   fetchSavedSatellites,
   processFlood,
@@ -87,6 +95,12 @@ beforeEach(() => {
   vi.mocked(deleteSavedSatellite).mockReset();
   vi.mocked(retryFileDownload).mockReset();
   vi.mocked(processFlood).mockReset();
+  vi.mocked(fetchFloodJobs).mockReset();
+  vi.mocked(deleteFloodJob).mockReset();
+  // Every test mounts FloodPage, which fetches the job list on mount - default
+  // to an empty list so tests that don't care about the Jobs panel aren't
+  // affected by an unhandled-rejection-shaped undefined return.
+  vi.mocked(fetchFloodJobs).mockResolvedValue({ items: [], total: 0 });
   mapEventHandlers = {};
   vi.stubGlobal("confirm", vi.fn(() => true));
 });
@@ -246,6 +260,77 @@ describe("FloodPage", () => {
       fireEvent.click(selectButtons[1]);
 
       expect(screen.getAllByRole("button", { name: /terpilih/i })).toHaveLength(1);
+    });
+  });
+
+  describe("Flood Jobs panel", () => {
+    const PROCESSING_JOB = {
+      id: "job-1",
+      name: "Flood: Aceh Tamiang Flood 14 Jan",
+      satelliteId: "sat-1",
+      status: "processing" as const,
+      progress: 42,
+      message: "Subset… 50%",
+      stage: "Subset",
+      stageIndex: 3,
+      totalStages: 8,
+      thresholdSigma0: 0.0137,
+      hasResult: false,
+      createdAt: "2025-01-14T12:00:00Z",
+      updatedAt: "2025-01-14T12:05:00Z",
+    };
+
+    beforeEach(() => {
+      vi.mocked(fetchSavedSatellites).mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 10 });
+    });
+
+    it("renders the 8-stage stepper reflecting a mid-pipeline job, with completed steps before stageIndex and one active step at stageIndex", async () => {
+      vi.mocked(fetchFloodJobs).mockResolvedValue({ items: [PROCESSING_JOB], total: 1 });
+
+      const { container } = render(
+        <Providers>
+          <FloodPage />
+        </Providers>
+      );
+
+      expect(await screen.findByText("Pekerjaan Banjir")).toBeInTheDocument();
+      expect(screen.getByText("Flood: Aceh Tamiang Flood 14 Jan")).toBeInTheDocument();
+
+      const steps = container.querySelectorAll("ol li");
+      expect(steps).toHaveLength(8);
+
+      // stageIndex=3: steps 0,1,2 are done; step 3 is active; steps 4-7 are pending.
+      const doneCount = Array.from(steps).filter((el) => el.className.includes("text-green-600")).length;
+      const activeCount = Array.from(steps).filter((el) => el.className.includes("font-medium text-foreground")).length;
+      expect(doneCount).toBe(3);
+      expect(activeCount).toBe(1);
+      expect(steps[3].className).toContain("font-medium text-foreground");
+      expect(steps[0].className).toContain("text-green-600");
+      expect(steps[7].className).toContain("text-muted-foreground");
+
+      // Progress bar reflects job.progress.
+      const bar = container.querySelector('[style*="width"]') as HTMLElement | null;
+      expect(bar).not.toBeNull();
+      expect(bar?.getAttribute("style")).toContain("42%");
+    });
+
+    it("deletes a job via the trash button after confirmation, and refetches the job list", async () => {
+      vi.mocked(fetchFloodJobs)
+        .mockResolvedValueOnce({ items: [PROCESSING_JOB], total: 1 })
+        .mockResolvedValueOnce({ items: [], total: 0 });
+      vi.mocked(deleteFloodJob).mockResolvedValue({ success: true });
+
+      render(
+        <Providers>
+          <FloodPage />
+        </Providers>
+      );
+
+      await screen.findByText("Flood: Aceh Tamiang Flood 14 Jan");
+      fireEvent.click(screen.getByRole("button", { name: /hapus/i }));
+
+      await waitFor(() => expect(deleteFloodJob).toHaveBeenCalledWith("job-1"));
+      await waitFor(() => expect(fetchFloodJobs).toHaveBeenCalledTimes(2));
     });
   });
 });
