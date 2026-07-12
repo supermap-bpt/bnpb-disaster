@@ -51,7 +51,7 @@ function Header() {
   const { language, setLanguage, t } = useLanguage();
   const { pathname } = useLocation();
   const { notifications, unreadCount, markAllRead } = useActivityNotifications();
-  const preDisasterActive = pathname === "/pre-disaster/landslide";
+  const preDisasterActive = pathname === "/pre-disaster/landslide" || pathname === "/pre-disaster/flood";
 
   return (
     <header className="sticky top-0 z-[1600] flex shrink-0 flex-col border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
@@ -172,6 +172,9 @@ function Header() {
           <DropdownMenuContent align="start">
             <DropdownMenuItem asChild>
               <Link to="/pre-disaster/landslide">{t("navLandslide")}</Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link to="/pre-disaster/flood">{t("navFlood")}</Link>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

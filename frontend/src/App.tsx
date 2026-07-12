@@ -7,6 +7,7 @@ import Header from "./components/Header";
 import DashboardPage from "./pages/DashboardPage";
 import FindSatellitePage from "./pages/FindSatellitePage";
 import SavedSatellitePage from "./pages/SavedSatellitePage";
+import FloodPage from "./pages/FloodPage";
 import LogsPage from "./pages/LogsPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
 
@@ -20,6 +21,7 @@ function AppShell() {
         <Route path="/logs" element={<LogsPage />} />
         <Route path="/pre-disaster" element={<PlaceholderPage titleKey="navPreDisaster" />} />
         <Route path="/pre-disaster/landslide" element={<SavedSatellitePage />} />
+        <Route path="/pre-disaster/flood" element={<FloodPage />} />
         <Route path="/during-disaster" element={<PlaceholderPage titleKey="navDuringDisaster" />} />
         <Route path="/prediction-disaster" element={<PlaceholderPage titleKey="navPredictionDisaster" />} />
       </Routes>

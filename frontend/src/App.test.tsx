@@ -98,4 +98,18 @@ describe("App", () => {
     render(<App />);
     await waitFor(() => expect(fetchActivityLogs).toHaveBeenCalled());
   });
+
+  it("shows 'Flood' as a second item in the Pre Disaster dropdown, routing to the renamed Flood page", () => {
+    render(<App />);
+
+    const trigger = screen.getByRole("button", { name: /pre disaster/i });
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+    fireEvent.click(trigger);
+    const floodLink = screen.getByRole("menuitem", { name: /^flood$/i });
+    expect(floodLink).toHaveAttribute("href", "/pre-disaster/flood");
+
+    goTo("/pre-disaster/flood");
+    render(<App />);
+    expect(screen.getByRole("heading", { name: /deteksi banjir|flood detection/i })).toBeInTheDocument();
+  });
 });

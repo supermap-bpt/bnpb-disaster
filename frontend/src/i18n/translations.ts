@@ -24,6 +24,7 @@ export const translations = {
     navSettings: "Settings",
     navPreDisaster: "Pre Disaster",
     navLandslide: "Landslide",
+    navFlood: "Flood",
     navDuringDisaster: "During Disaster",
     navPredictionDisaster: "Prediction Disaster",
 
@@ -232,6 +233,7 @@ export const translations = {
     navSettings: "Settings",
     navPreDisaster: "Pre Disaster",
     navLandslide: "Landslide",
+    navFlood: "Flood",
     navDuringDisaster: "During Disaster",
     navPredictionDisaster: "Prediction Disaster",
 
