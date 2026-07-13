@@ -5,10 +5,11 @@ import respx
 from app.auth import TokenManager
 from app.config import Settings
 from app.models import ProductType, SearchQuery
-from app.services.cache import get_cached_attributes, get_cached_product_size
+from app.services.cache import get_cached_attributes, get_cached_product_size, get_cached_quicklook_asset_id
 from app.services.catalogue import (
     _aoi_to_polygon_wkt,
     build_odata_filter,
+    parse_wkt_footprint,
     parse_wkt_polygon,
     search_products,
 )
@@ -18,6 +19,30 @@ def test_parse_wkt_polygon_extracts_coordinate_pairs():
     wkt = "geography'SRID=4326;POLYGON((95.0 4.0, 98.0 4.0, 98.0 6.0, 95.0 6.0, 95.0 4.0))'"
     coords = parse_wkt_polygon(wkt)
     assert coords == [[[95.0, 4.0], [98.0, 4.0], [98.0, 6.0], [95.0, 6.0], [95.0, 4.0]]]
+
+
+def test_parse_wkt_footprint_returns_polygon_type_for_a_plain_polygon():
+    wkt = "geography'SRID=4326;POLYGON((95.0 4.0, 98.0 4.0, 98.0 6.0, 95.0 6.0, 95.0 4.0))'"
+    geometry_type, coordinates = parse_wkt_footprint(wkt)
+    assert geometry_type == "Polygon"
+    assert coordinates == [[[95.0, 4.0], [98.0, 4.0], [98.0, 6.0], [95.0, 6.0], [95.0, 4.0]]]
+
+
+def test_parse_wkt_footprint_returns_multipolygon_type_for_antimeridian_crossing_footprint():
+    # Real shape CDSE returns for footprints crossing the antimeridian (e.g.
+    # Sentinel-3 WST's near-global, near-polar swaths) - two separate rings,
+    # one either side of the 180th meridian.
+    wkt = (
+        "geography'SRID=4326;MULTIPOLYGON ("
+        "((180 -83.1, 180 -61.6, 172.7 -81.7, 180 -83.1)), "
+        "((-180 -61.6, -180 -83.1, -179.4 -83.2, -180 -61.6)))'"
+    )
+    geometry_type, coordinates = parse_wkt_footprint(wkt)
+    assert geometry_type == "MultiPolygon"
+    assert coordinates == [
+        [[[180.0, -83.1], [180.0, -61.6], [172.7, -81.7], [180.0, -83.1]]],
+        [[[-180.0, -61.6], [-180.0, -83.1], [-179.4, -83.2], [-180.0, -61.6]]],
+    ]
 
 
 def test_aoi_to_polygon_wkt_builds_closed_rectangle_from_bbox_corners():
@@ -413,6 +438,100 @@ async def test_search_products_returns_parsed_results_with_type_from_attributes(
 
 
 @respx.mock
+async def test_search_products_caches_quicklook_asset_id_when_present(settings):
+    respx.post("https://identity.test/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "tok-1", "expires_in": 600})
+    )
+    catalogue_route = respx.get("https://catalogue.test/Products").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "@odata.count": 1,
+                "value": [
+                    {
+                        "Id": "S3A_SL_2_LST____20260610T160122",
+                        "Name": "S3A_SL_2_LST____20260610T160122.SEN3",
+                        "ContentDate": {"Start": "2026-06-10T16:01:22.000000Z"},
+                        "ContentLength": 62914560,
+                        "Footprint": (
+                            "geography'SRID=4326;POLYGON((95.0 4.0, 98.0 4.0, "
+                            "98.0 6.0, 95.0 6.0, 95.0 4.0))'"
+                        ),
+                        "Attributes": [
+                            {"Name": "productType", "Value": "SL_2_LST___"},
+                        ],
+                        "Assets": [
+                            {
+                                "Type": "QUICKLOOK",
+                                "Id": "asset-quicklook-1",
+                                "DownloadLink": "https://catalogue.test/Assets(asset-quicklook-1)/$value",
+                            }
+                        ],
+                    },
+                ],
+            },
+        )
+    )
+    query = SearchQuery(
+        productType=[ProductType.S3_SLSTR_L2_LST],
+        dateFrom="2026-06-01",
+        dateUntil="2026-06-30",
+        aoi="95.0,4.0,98.0,4.0,98.0,6.0,95.0,6.0",
+    )
+    token_manager = TokenManager(settings)
+
+    result = await search_products(query, settings, token_manager)
+
+    assert result.results[0].productType is ProductType.S3_SLSTR_L2_LST
+    assert get_cached_quicklook_asset_id("S3A_SL_2_LST____20260610T160122") == "asset-quicklook-1"
+    request_url = str(catalogue_route.calls.last.request.url)
+    assert request_url.count("expand=Attributes") == 1
+    assert request_url.count("expand=Assets") == 1
+
+
+@respx.mock
+async def test_search_products_leaves_quicklook_asset_id_uncached_when_assets_empty(settings):
+    respx.post("https://identity.test/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "tok-1", "expires_in": 600})
+    )
+    respx.get("https://catalogue.test/Products").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "@odata.count": 1,
+                "value": [
+                    {
+                        "Id": "S3A_SL_2_WST____20260610T150712",
+                        "Name": "S3A_SL_2_WST____20260610T150712.SEN3",
+                        "ContentDate": {"Start": "2026-06-10T15:07:12.000000Z"},
+                        "ContentLength": 62914560,
+                        "Footprint": (
+                            "geography'SRID=4326;POLYGON((95.0 4.0, 98.0 4.0, "
+                            "98.0 6.0, 95.0 6.0, 95.0 4.0))'"
+                        ),
+                        "Attributes": [
+                            {"Name": "productType", "Value": "SL_2_WST___"},
+                        ],
+                        "Assets": [],
+                    },
+                ],
+            },
+        )
+    )
+    query = SearchQuery(
+        productType=[ProductType.S3_SLSTR_L2_WST],
+        dateFrom="2026-06-01",
+        dateUntil="2026-06-30",
+        aoi="95.0,4.0,98.0,4.0,98.0,6.0,95.0,6.0",
+    )
+    token_manager = TokenManager(settings)
+
+    await search_products(query, settings, token_manager)
+
+    assert get_cached_quicklook_asset_id("S3A_SL_2_WST____20260610T150712") is None
+
+
+@respx.mock
 async def test_search_products_passes_skip_through_for_pagination(settings):
     respx.post("https://identity.test/token").mock(
         return_value=httpx.Response(200, json={"access_token": "tok-1", "expires_in": 600})
@@ -496,6 +615,26 @@ def test_search_endpoint_rejects_cloud_cover_max_above_100(client):
 
 
 @respx.mock
+def test_search_endpoint_dispatches_to_demnas_for_demnas_product_types(client):
+    respx.get("https://demnas.test/demnas.json").mock(
+        return_value=httpx.Response(200, json={"type": "FeatureCollection", "features": []})
+    )
+
+    response = client.get(
+        "/api/search",
+        params={
+            "productType": ["DEMNAS_25K"],
+            "dateFrom": "2026-01-01",
+            "dateUntil": "2026-01-31",
+            "aoi": "95.0,4.0,98.0,4.0,98.0,6.0,95.0,6.0",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"results": [], "total": 0}
+
+
+@respx.mock
 def test_search_endpoint_accepts_sentinel2_with_cloud_cover_max(client):
     respx.post("https://identity.test/token").mock(
         return_value=httpx.Response(200, json={"access_token": "tok-1", "expires_in": 600})
@@ -515,3 +654,56 @@ def test_search_endpoint_accepts_sentinel2_with_cloud_cover_max(client):
     )
     assert response.status_code == 200
     assert response.json() == {"results": [], "total": 0}
+
+
+@respx.mock
+def test_demnas_footprints_endpoint_returns_lean_unpaginated_items(client):
+    respx.get("https://demnas.test/demnas.json").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {"NAMOBJ": "1118-631", "SKALA": "25K"},
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [
+                                [
+                                    [95.0, 4.0, 0.0],
+                                    [96.0, 4.0, 0.0],
+                                    [96.0, 5.0, 0.0],
+                                    [95.0, 5.0, 0.0],
+                                    [95.0, 4.0, 0.0],
+                                ]
+                            ],
+                        },
+                    }
+                ],
+            },
+        )
+    )
+    response = client.get(
+        "/api/search/demnas-footprints",
+        params={
+            "productType": ["DEMNAS_25K"],
+            "aoi": "94.5,3.5,96.5,3.5,96.5,5.5,94.5,5.5",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "total": 1,
+        "items": [
+            {
+                "id": "1118-631",
+                "productType": "DEMNAS_25K",
+                "footprint": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [[95.0, 4.0], [96.0, 4.0], [96.0, 5.0], [95.0, 5.0], [95.0, 4.0]]
+                    ],
+                },
+            }
+        ],
+    }

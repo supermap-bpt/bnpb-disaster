@@ -38,30 +38,47 @@ describe("App", () => {
     expect(screen.queryByText(/lihat di peta/i)).not.toBeInTheDocument();
   });
 
-  it("shows the 'Satellite Explorer' dropdown nav item", () => {
+  it("shows 'Satellite Explorer' as a direct nav link (no dropdown)", () => {
     render(<App />);
-    expect(screen.getByText(/satellite explorer/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /satellite explorer/i })).toHaveAttribute(
+      "href",
+      "/satellite-explorer"
+    );
   });
 
-  it("renders the map and sidebar on /find-satellite", () => {
-    goTo("/find-satellite");
+  it("renders the map and sidebar on /satellite-explorer", () => {
+    goTo("/satellite-explorer");
     render(<App />);
     expect(screen.getByTestId("sidebar")).toBeInTheDocument();
     expect(screen.getByTestId("map-view")).toBeInTheDocument();
   });
 
-  it("mobile drawer toggle opens the results/filter overlay on /find-satellite", () => {
-    goTo("/find-satellite");
+  it("mobile drawer toggle opens the results/filter overlay on /satellite-explorer", () => {
+    goTo("/satellite-explorer");
     render(<App />);
     const toggle = screen.getByRole("button", { name: /filter & hasil/i });
     fireEvent.click(toggle);
     expect(screen.getByTestId("sidebar")).toBeInTheDocument();
   });
 
+  it("shows 'Pre Disaster' as a nav dropdown with a 'Landslide' item routing to the renamed Landslide Processing page", () => {
+    render(<App />);
+
+    const nav = within(screen.getByRole("navigation"));
+    const trigger = nav.getByRole("button", { name: /^pre disaster$/i });
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+    fireEvent.click(trigger);
+    const landslideLink = screen.getByRole("menuitem", { name: /^landslide$/i });
+    expect(landslideLink).toHaveAttribute("href", "/pre-disaster/landslide");
+
+    goTo("/pre-disaster/landslide");
+    render(<App />);
+    expect(screen.getByRole("heading", { name: /landslide processing/i })).toBeInTheDocument();
+  });
+
   it("Dashboard cards link to the renamed disaster-management routes", () => {
     render(<App />);
     const main = within(screen.getByRole("main"));
-    expect(main.getByRole("link", { name: /pre disaster/i })).toHaveAttribute("href", "/pre-disaster");
     expect(main.getByRole("link", { name: /during disaster/i })).toHaveAttribute(
       "href",
       "/during-disaster"
@@ -72,14 +89,36 @@ describe("App", () => {
     );
   });
 
-  it("navigating to /pre-disaster shows the renamed placeholder page", () => {
-    goTo("/pre-disaster");
+  it("Dashboard's Pre Disaster card opens the header's Pre Disaster dropdown directly instead of navigating", () => {
     render(<App />);
-    expect(screen.getByRole("heading", { name: /pre disaster/i })).toBeInTheDocument();
+    const main = within(screen.getByRole("main"));
+    const card = main.getByRole("button", { name: /pre disaster/i });
+
+    fireEvent.click(card);
+
+    const landslideItem = screen.getByRole("menuitem", { name: /^landslide$/i });
+    const floodItem = screen.getByRole("menuitem", { name: /^flood$/i });
+    expect(landslideItem).toHaveAttribute("href", "/pre-disaster/landslide");
+    expect(floodItem).toHaveAttribute("href", "/pre-disaster/flood");
   });
 
   it("mounts the activity notifications provider (polls the logs endpoint on load)", async () => {
     render(<App />);
     await waitFor(() => expect(fetchActivityLogs).toHaveBeenCalled());
+  });
+
+  it("shows 'Flood' as a second item in the Pre Disaster dropdown, routing to the renamed Flood page", () => {
+    render(<App />);
+
+    const nav = within(screen.getByRole("navigation"));
+    const trigger = nav.getByRole("button", { name: /^pre disaster$/i });
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+    fireEvent.click(trigger);
+    const floodLink = screen.getByRole("menuitem", { name: /^flood$/i });
+    expect(floodLink).toHaveAttribute("href", "/pre-disaster/flood");
+
+    goTo("/pre-disaster/flood");
+    render(<App />);
+    expect(screen.getByRole("heading", { name: /deteksi banjir|flood detection/i })).toBeInTheDocument();
   });
 });

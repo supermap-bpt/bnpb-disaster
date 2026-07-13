@@ -1,16 +1,25 @@
 """Renders a landslide-mask GeoTIFF into a web-map overlay PNG using the GDAL CLI.
 
 The result.tif is a UTM multi-band product; band 5 is ``mask_combined`` (1 =
-landslide candidate, 0 = background). This colourises that band (1 -> red, 0 /
-no-data -> transparent), reprojects to WGS84, and emits a PNG plus the WGS84
-bounds so the frontend can drop it on Leaflet as an ImageOverlay.
+landslide candidate, 0 = background). This applies a grayscale min/max stretch
+to that band (0 -> black, 1 -> white, matching the default "Stretch, Minimum
+Maximum" symbology ArcGIS Pro shows for this band; genuine no-data stays
+transparent), reprojects to WGS84, and emits a PNG plus the WGS84 bounds so
+the frontend can drop it on Leaflet as an ImageOverlay.
 
 No Python raster deps (rasterio/GDAL bindings aren't installed) - shells out to
 gdaldem/gdalwarp/gdal_translate/gdalinfo, which are on PATH.
+
+Windows subprocess note: every GDAL invocation runs via the classic blocking
+`subprocess` module inside a thread-pool executor (`loop.run_in_executor`),
+never `asyncio.create_subprocess_exec` - see app/services/landslide.py's
+module docstring for why (SelectorEventLoop, forced by uvicorn on Windows,
+cannot spawn subprocesses at all).
 """
 import asyncio
 import json
 import logging
+import subprocess
 import zipfile
 from pathlib import Path
 from xml.sax.saxutils import escape
@@ -21,24 +30,39 @@ logger = logging.getLogger(__name__)
 # mask_VH, mask_combined.
 _MASK_COMBINED_BAND = 5
 
-# Landslide pixels -> dark magenta (stands out against green/tan terrain and is
-# darker/more saturated than plain red); background & no-data -> transparent.
-_COLOR_TABLE = "0 0 0 0 0\n1 139 0 139 255\nnv 0 0 0 0\n"
+# Grayscale min/max stretch of a 0/1 binary band: 0 (background) -> black,
+# 1 (landslide candidate) -> white, opaque - matching ArcGIS Pro's default
+# "Stretch, Minimum Maximum" symbology for this band. Genuine no-data (edge
+# pixels from reprojection, invalid computation) stays transparent so it
+# doesn't render as a solid black block outside the real footprint.
+_COLOR_TABLE = "0 0 0 0 255\n1 255 255 255 255\nnv 0 0 0 0\n"
+
+# Cap the web-preview/KMZ overlay's long edge at this many pixels. A full,
+# no-AOI scene's result.tif can be tens of thousands of pixels per side (e.g.
+# 28343x21808 observed) - exporting a preview PNG at that native resolution
+# produces a multi-hundred-megapixel image that's too slow to download and
+# too large for a browser <img>/ImageOverlay to decode at all (it silently
+# fails to render). This only affects the derived preview/KMZ overlay -
+# result.tif itself (the actual download) stays full resolution.
+_PREVIEW_MAX_DIMENSION = 2048
 
 
-async def _run(*args: str) -> bool:
+def _run_blocking(args: tuple[str, ...]) -> bool:
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
-        )
+        result = subprocess.run(args, capture_output=True)
     except FileNotFoundError:
         logger.warning("GDAL tool not found: %s", args[0])
         return False
-    out, _ = await proc.communicate()
-    if proc.returncode != 0:
+    if result.returncode != 0:
+        out = (result.stdout or b"") + (result.stderr or b"")
         logger.warning("GDAL %s failed: %s", args[0], out.decode(errors="replace")[-500:])
         return False
     return True
+
+
+async def _run(*args: str) -> bool:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _run_blocking, args)
 
 
 async def ensure_preview(work_dir: Path) -> list[float] | None:
@@ -67,8 +91,11 @@ async def ensure_preview(work_dir: Path) -> list[float] | None:
         "gdaldem", "color-relief", "-alpha", "-b", str(_MASK_COMBINED_BAND),
         result.as_posix(), color_file.as_posix(), rgba.as_posix(),
     )
-    ok = ok and await _run("gdalwarp", "-t_srs", "EPSG:4326", "-r", "near",
-                           "-overwrite", rgba.as_posix(), wgs.as_posix())
+    ok = ok and await _run(
+        "gdalwarp", "-t_srs", "EPSG:4326", "-r", "near",
+        "-ts", str(_PREVIEW_MAX_DIMENSION), "0",
+        "-overwrite", rgba.as_posix(), wgs.as_posix(),
+    )
     ok = ok and await _run("gdal_translate", "-of", "PNG", wgs.as_posix(), png.as_posix())
     if not ok:
         return None
@@ -122,17 +149,21 @@ async def ensure_kmz(work_dir: Path, name: str = "Landslide mask") -> Path | Non
     return kmz
 
 
-async def _wgs84_bounds(tif: Path) -> list[float] | None:
-    """Return [south, west, north, east] from a WGS84 GeoTIFF via gdalinfo -json."""
+def _gdalinfo_json_blocking(tif: Path) -> bytes | None:
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "gdalinfo", "-json", tif.as_posix(),
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-        )
+        result = subprocess.run(["gdalinfo", "-json", tif.as_posix()], capture_output=True)
     except FileNotFoundError:
         return None
-    out, _ = await proc.communicate()
-    if proc.returncode != 0:
+    if result.returncode != 0:
+        return None
+    return result.stdout
+
+
+async def _wgs84_bounds(tif: Path) -> list[float] | None:
+    """Return [south, west, north, east] from a WGS84 GeoTIFF via gdalinfo -json."""
+    loop = asyncio.get_running_loop()
+    out = await loop.run_in_executor(None, _gdalinfo_json_blocking, tif)
+    if out is None:
         return None
     try:
         corners = json.loads(out)["cornerCoordinates"]

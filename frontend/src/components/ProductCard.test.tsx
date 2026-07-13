@@ -57,6 +57,16 @@ const SENTINEL3_ITEM: SearchResultItem = {
   footprint: { type: "Polygon", coordinates: [] },
 };
 
+const DEMNAS_ITEM: SearchResultItem = {
+  id: "demnas-1",
+  name: "DSMHYDRO_32BIT_1118-631.tif",
+  productType: "DEMNAS_25K",
+  sensingTime: "2014-01-01T00:00:00Z",
+  size: "N/A",
+  polarisation: "N/A",
+  footprint: { type: "Polygon", coordinates: [] },
+};
+
 function SelectFirst({ select }: { select: boolean }) {
   const gis = useGIS();
   useEffect(() => {
@@ -310,6 +320,19 @@ describe("ProductCard", () => {
     expect(screen.queryByText(/cloud cover/i)).not.toBeInTheDocument();
   });
 
+  it("shows a real thumbnail for Sentinel-3 SLSTR L2 LST", () => {
+    render(
+      <Providers>
+        <ProductCard item={SENTINEL3_ITEM} />
+      </Providers>
+    );
+
+    expect(screen.getByRole("img", { name: SENTINEL3_ITEM.name })).toHaveAttribute(
+      "src",
+      "http://localhost:8000/api/preview-image/p5"
+    );
+  });
+
   it("shows the placeholder (no image attempt) for Sentinel-3 SLSTR L2 WST", () => {
     const wstItem: SearchResultItem = { ...SENTINEL3_ITEM, productType: "SENTINEL_3_SLSTR_L2_WST", id: "p6" };
     render(
@@ -321,5 +344,68 @@ describe("ProductCard", () => {
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
     expect(screen.getByText("No Preview")).toBeInTheDocument();
     expect(screen.getByText("Level-2 WST")).toBeInTheDocument();
+  });
+
+  it("shows DEMNAS mission/instrument/label, just the year for sensing time, no polarisation/cloud-cover row, and a real preview thumbnail", () => {
+    render(
+      <Providers>
+        <ProductCard item={DEMNAS_ITEM} />
+      </Providers>
+    );
+
+    expect(screen.getByText("DEMNAS")).toBeInTheDocument();
+    expect(screen.getByText("DEM")).toBeInTheDocument();
+    expect(screen.getByText("25K")).toBeInTheDocument();
+    expect(screen.getByText("2014")).toBeInTheDocument();
+    expect(screen.queryByText("2014-01-01T00:00:00Z")).not.toBeInTheDocument();
+    expect(screen.queryByText(/polarisation/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/cloud cover/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: DEMNAS_ITEM.name })).toHaveAttribute(
+      "src",
+      "https://tanahair.indonesia.go.id/demnas/images/DEMNAS_demnas-1.jpg"
+    );
+  });
+
+  it("falls back to the placeholder if the DEMNAS thumbnail image fails to load", () => {
+    render(
+      <Providers>
+        <ProductCard item={DEMNAS_ITEM} />
+      </Providers>
+    );
+
+    fireEvent.error(screen.getByRole("img", { name: DEMNAS_ITEM.name }));
+
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.getByText("No Preview")).toBeInTheDocument();
+  });
+
+  it("DEMNAS Download link points at BIG's login deep-link with the tile's filename, and opens in a new tab", () => {
+    render(
+      <Providers>
+        <ProductCard item={DEMNAS_ITEM} />
+      </Providers>
+    );
+
+    const link = screen.getByRole("link", { name: /download/i });
+    expect(link).toHaveAttribute(
+      "href",
+      "https://tanahair.indonesia.go.id/portal-web/login?page=/unduh/demnas&filename=DEMNAS_demnas-1_v1.0.tif"
+    );
+    expect(link).toHaveAttribute("target", "_blank");
+  });
+
+  it("shows a dash for the year when DEMNAS sensingTime is the unknown-year sentinel", () => {
+    const noYearItem: SearchResultItem = {
+      ...DEMNAS_ITEM,
+      id: "demnas-2",
+      sensingTime: "0001-01-01T00:00:00Z",
+    };
+    render(
+      <Providers>
+        <ProductCard item={noYearItem} />
+      </Providers>
+    );
+
+    expect(screen.getByText("-")).toBeInTheDocument();
   });
 });

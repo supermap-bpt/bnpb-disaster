@@ -85,7 +85,10 @@ function ProductInfoModal({
   const [error, setError] = useState<string | null>(null);
   const [imageFailed, setImageFailed] = useState(false);
   const showThumbnail =
-    (item.productType === "SENTINEL_1_GRD" || item.productType === "SENTINEL_2_L2A") && !imageFailed;
+    (item.productType === "SENTINEL_1_GRD" ||
+      item.productType === "SENTINEL_2_L2A" ||
+      item.productType === "SENTINEL_3_SLSTR_L2_LST") &&
+    !imageFailed;
 
   useEffect(() => {
     if (!open) return;

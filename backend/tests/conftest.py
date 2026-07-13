@@ -50,10 +50,21 @@ def override_settings():
         cdse_catalogue_url="https://catalogue.test/Products",
         cdse_process_url="https://wms.test/process",
         nominatim_url="https://nominatim.test/search",
+        demnas_url="https://demnas.test/demnas.json",
     )
     app.dependency_overrides[get_settings] = lambda: test_settings
     yield
     app.dependency_overrides.clear()
+
+
+import app.services.demnas as demnas_module
+
+
+@pytest.fixture(autouse=True)
+def _reset_demnas_module_cache():
+    demnas_module._demnas_cache = None
+    yield
+    demnas_module._demnas_cache = None
 
 
 import pytest_asyncio

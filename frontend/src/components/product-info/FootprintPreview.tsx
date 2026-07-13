@@ -1,9 +1,10 @@
 import type { LatLngBoundsExpression } from "leaflet";
 import { GeoJSON, MapContainer, TileLayer } from "react-leaflet";
 import type { Footprint } from "@/context/GISContext";
+import { flattenFootprintPoints } from "@/lib/geometry";
 
 export function footprintBounds(footprint: Footprint): LatLngBoundsExpression {
-  const points = footprint.coordinates.flat();
+  const points = flattenFootprintPoints(footprint.coordinates);
   const lons = points.map(([lon]) => lon);
   const lats = points.map(([, lat]) => lat);
   return [

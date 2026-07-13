@@ -2,6 +2,8 @@ import { useEffect } from "react";
 import { GeoJSON, ImageOverlay, MapContainer, TileLayer, ZoomControl, useMap } from "react-leaflet";
 import { getSavedSatelliteThumbnailUrl, type SavedSatelliteDetail } from "../api/client";
 import { footprintBounds } from "@/components/product-info/FootprintPreview";
+import MapAddressSearch from "./MapAddressSearch";
+import MapBboxDrawTool, { type Bbox } from "./MapBboxDrawTool";
 
 function RemoveLeafletPrefix() {
   const map = useMap();
@@ -60,9 +62,13 @@ function LandslideOverlaySync({ overlay }: { overlay: LandslideOverlay | null })
 function SavedSatelliteMap({
   selected,
   overlay = null,
+  bbox = null,
+  onBboxChange = () => {},
 }: {
   selected: SavedSatelliteDetail | null;
   overlay?: LandslideOverlay | null;
+  bbox?: Bbox | null;
+  onBboxChange?: (bbox: Bbox | null) => void;
 }) {
   return (
     <MapContainer center={[-2.5, 118]} zoom={5} zoomControl={false} className="h-full w-full">
@@ -74,8 +80,11 @@ function SavedSatelliteMap({
       <ZoomControl position="bottomright" />
       <SelectedFootprintSync selected={selected} />
       <LandslideOverlaySync overlay={overlay} />
+      <MapAddressSearch />
+      <MapBboxDrawTool bbox={bbox} onBboxChange={onBboxChange} />
     </MapContainer>
   );
 }
 
 export default SavedSatelliteMap;
+export type { Bbox };

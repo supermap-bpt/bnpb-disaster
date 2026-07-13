@@ -1,12 +1,15 @@
 import { act, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useEffect, type ReactNode } from "react";
-import { GISProvider, useGIS } from "../context/GISContext";
+import { GISProvider, useGIS, type SearchResultItem } from "../context/GISContext";
 
 const geoJsonClickHandlers: Record<string, () => void> = {};
 const geoJsonHoverHandlers: Record<string, { mouseover?: () => void; mouseout?: () => void }> = {};
 const geoJsonStyleLog: Record<string, any> = {};
+const demnasCoverageLog: { featureCount: number; style: any; interactive: any; onEachFeature: any }[] = [];
 const fitBoundsMock = vi.fn();
+const getBoundsMock = vi.fn();
+let moveEndHandler: (() => void) | null = null;
 
 // Real react-leaflet's useMap() returns the SAME Leaflet Map instance across
 // renders. A mock that returns a fresh object literal every call breaks any
@@ -14,14 +17,22 @@ const fitBoundsMock = vi.fn();
 // effect every render, which (since the effect itself causes a re-render via
 // context setters) is an infinite loop that hangs the test runner. Must be a
 // stable singleton.
-const mapInstanceMock = { fitBounds: fitBoundsMock, attributionControl: { setPrefix: vi.fn() } };
+const mapInstanceMock = {
+  fitBounds: fitBoundsMock,
+  attributionControl: { setPrefix: vi.fn() },
+  getBounds: getBoundsMock,
+};
 
 vi.mock("react-leaflet", () => ({
   MapContainer: ({ children }: { children: ReactNode }) => (
     <div data-testid="map-container">{children}</div>
   ),
   TileLayer: () => <div data-testid="tile-layer" />,
-  GeoJSON: ({ data, eventHandlers, style }: any) => {
+  GeoJSON: ({ data, eventHandlers, style, interactive, onEachFeature }: any) => {
+    if (data.type === "FeatureCollection") {
+      demnasCoverageLog.push({ featureCount: data.features.length, style, interactive, onEachFeature });
+      return <div data-testid="demnas-coverage-layer" />;
+    }
     const id = data.properties.id;
     if (eventHandlers?.click) geoJsonClickHandlers[id] = eventHandlers.click;
     if (id && (eventHandlers?.mouseover || eventHandlers?.mouseout)) {
@@ -37,13 +48,18 @@ vi.mock("react-leaflet", () => ({
   ImageOverlay: ({ url }: { url: string }) => <img data-testid="preview-overlay" src={url} />,
   ZoomControl: () => <div data-testid="zoom-control" />,
   useMap: () => mapInstanceMock,
+  useMapEvents: (handlers: { moveend?: () => void }) => {
+    moveEndHandler = handlers.moveend ?? null;
+    return mapInstanceMock;
+  },
 }));
 
 vi.mock("../api/client", () => ({
   fetchPreview: vi.fn(),
+  fetchSearch: vi.fn(),
 }));
 
-import { fetchPreview } from "../api/client";
+import { fetchPreview, fetchSearch } from "../api/client";
 import MapView, { aoiRingToBounds } from "./MapView";
 
 beforeEach(() => {
@@ -56,6 +72,10 @@ beforeEach(() => {
     tileUrl: "https://wms.test/process?access_token=default",
     bounds: [[4, 95], [6, 98]],
   });
+  vi.mocked(fetchSearch).mockReset();
+  getBoundsMock.mockReset();
+  moveEndHandler = null;
+  demnasCoverageLog.length = 0;
 });
 
 describe("aoiRingToBounds", () => {
@@ -227,6 +247,253 @@ describe("MapView", () => {
     expect(await screen.findByTestId("preview-overlay")).toHaveAttribute(
       "src",
       "https://wms.test/process?access_token=tok"
+    );
+  });
+
+  it("zooms to the footprint but does not fetch a preview for a product type with no preview support (e.g. DEMNAS)", async () => {
+    const demnasItem: SearchResultItem = {
+      id: "demnas-1",
+      name: "DSMHYDRO_32BIT_1118-631.tif",
+      productType: "DEMNAS_25K" as any,
+      sensingTime: "2014-01-01T00:00:00Z",
+      size: "N/A",
+      polarisation: "N/A",
+      footprint: { type: "Polygon", coordinates: [[[95, 4], [98, 4], [98, 6], [95, 6]]] },
+    };
+    function DemnasResultsSeeder({ children }: { children: ReactNode }) {
+      const gis = useGIS();
+      useEffect(() => {
+        gis.setSearchResults([demnasItem], 1);
+      }, []);
+      return <>{children}</>;
+    }
+    fitBoundsMock.mockClear();
+    vi.mocked(fetchPreview).mockClear();
+
+    render(
+      <GISProvider>
+        <DemnasResultsSeeder>
+          <MapView />
+        </DemnasResultsSeeder>
+      </GISProvider>
+    );
+
+    act(() => geoJsonClickHandlers["demnas-1"]());
+
+    expect(fitBoundsMock).toHaveBeenCalledWith([
+      [4, 95],
+      [6, 98],
+    ]);
+    expect(fetchPreview).not.toHaveBeenCalled();
+  });
+});
+
+const WST_FILTER = {
+  productType: ["SENTINEL_3_SLSTR_L2_WST"] as const,
+  cloudCoverMax: 100,
+  dateFrom: "2025-01-01",
+  dateUntil: "2025-01-31",
+};
+
+function FilterSeeder({ filter, children }: { filter: typeof WST_FILTER | null; children: ReactNode }) {
+  const gis = useGIS();
+  useEffect(() => {
+    gis.setLastSearchFilter(filter as any);
+  }, []);
+  return <>{children}</>;
+}
+
+describe("Sentinel-3 WST viewport re-search", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("re-searches the current map viewport, debounced, when WST is the active filter", async () => {
+    vi.mocked(fetchSearch).mockResolvedValue({ results: [SAMPLE_ITEM], total: 1 });
+    getBoundsMock.mockReturnValue({
+      getWest: () => 90,
+      getEast: () => 100,
+      getNorth: () => 10,
+      getSouth: () => -10,
+    });
+
+    render(
+      <GISProvider>
+        <FilterSeeder filter={WST_FILTER}>
+          <MapView />
+        </FilterSeeder>
+      </GISProvider>
+    );
+
+    act(() => moveEndHandler?.());
+    expect(fetchSearch).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(fetchSearch).toHaveBeenCalledWith(
+      WST_FILTER,
+      [
+        [90, -10],
+        [100, -10],
+        [100, 10],
+        [90, 10],
+      ],
+      0
+    );
+  });
+
+  it("does not re-search when the active filter has no Sentinel-3 WST leaf checked", async () => {
+    render(
+      <GISProvider>
+        <FilterSeeder filter={{ ...WST_FILTER, productType: ["SENTINEL_1_GRD"] as any }}>
+          <MapView />
+        </FilterSeeder>
+      </GISProvider>
+    );
+
+    act(() => moveEndHandler?.());
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(fetchSearch).not.toHaveBeenCalled();
+  });
+
+  it("does not re-search before any search has been submitted", async () => {
+    render(
+      <GISProvider>
+        <FilterSeeder filter={null}>
+          <MapView />
+        </FilterSeeder>
+      </GISProvider>
+    );
+
+    act(() => moveEndHandler?.());
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(fetchSearch).not.toHaveBeenCalled();
+  });
+
+  it("debounces rapid successive pans into a single re-search", async () => {
+    vi.mocked(fetchSearch).mockResolvedValue({ results: [], total: 0 });
+    getBoundsMock.mockReturnValue({
+      getWest: () => 90,
+      getEast: () => 100,
+      getNorth: () => 10,
+      getSouth: () => -10,
+    });
+
+    render(
+      <GISProvider>
+        <FilterSeeder filter={WST_FILTER}>
+          <MapView />
+        </FilterSeeder>
+      </GISProvider>
+    );
+
+    act(() => moveEndHandler?.());
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+    act(() => moveEndHandler?.());
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+    act(() => moveEndHandler?.());
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(fetchSearch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("DemnasCoverageLayer", () => {
+  it("renders nothing when there are no DEMNAS footprints", () => {
+    render(
+      <GISProvider>
+        <MapView />
+      </GISProvider>
+    );
+
+    expect(screen.queryByTestId("demnas-coverage-layer")).not.toBeInTheDocument();
+  });
+
+  it("renders every DEMNAS footprint as one merged, clickable layer", () => {
+    function DemnasFootprintsSeeder({ children }: { children: ReactNode }) {
+      const gis = useGIS();
+      useEffect(() => {
+        gis.setDemnasFootprints([
+          {
+            id: "tile-1",
+            productType: "DEMNAS_25K" as any,
+            footprint: { type: "Polygon", coordinates: [[[95, 4], [96, 4], [96, 5], [95, 5]]] },
+          },
+          {
+            id: "tile-2",
+            productType: "DEMNAS_50K" as any,
+            footprint: { type: "Polygon", coordinates: [[[96, 4], [97, 4], [97, 5], [96, 5]]] },
+          },
+        ]);
+      }, []);
+      return <>{children}</>;
+    }
+
+    render(
+      <GISProvider>
+        <DemnasFootprintsSeeder>
+          <MapView />
+        </DemnasFootprintsSeeder>
+      </GISProvider>
+    );
+
+    expect(screen.getByTestId("demnas-coverage-layer")).toBeInTheDocument();
+    expect(demnasCoverageLog).toHaveLength(1);
+    expect(demnasCoverageLog[0].featureCount).toBe(2);
+    expect(demnasCoverageLog[0].interactive).toBe(true);
+  });
+
+  it("wires each tile's popup with its preview image, filename, and BIG login download link", () => {
+    function DemnasFootprintsSeeder({ children }: { children: ReactNode }) {
+      const gis = useGIS();
+      useEffect(() => {
+        gis.setDemnasFootprints([
+          {
+            id: "1118-631",
+            productType: "DEMNAS_25K" as any,
+            footprint: { type: "Polygon", coordinates: [[[95, 4], [96, 4], [96, 5], [95, 5]]] },
+          },
+        ]);
+      }, []);
+      return <>{children}</>;
+    }
+
+    render(
+      <GISProvider>
+        <DemnasFootprintsSeeder>
+          <MapView />
+        </DemnasFootprintsSeeder>
+      </GISProvider>
+    );
+
+    const bindPopup = vi.fn();
+    const fakeLayer = { bindPopup, on: vi.fn(), setStyle: vi.fn() };
+    demnasCoverageLog[0].onEachFeature({ properties: { id: "1118-631" } }, fakeLayer);
+
+    expect(bindPopup).toHaveBeenCalledTimes(1);
+    const html = bindPopup.mock.calls[0][0];
+    expect(html).toContain("https://tanahair.indonesia.go.id/demnas/images/DEMNAS_1118-631.jpg");
+    expect(html).toContain("DEMNAS_1118-631_v1.0.tif");
+    expect(html).toContain(
+      "https://tanahair.indonesia.go.id/portal-web/login?page=/unduh/demnas&filename=DEMNAS_1118-631_v1.0.tif"
     );
   });
 });

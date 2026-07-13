@@ -1,5 +1,12 @@
-import type { FilterFormValues } from "../schemas/filterSchema";
-import type { AoiRing, Footprint, GeocodeResult, PreviewData, SearchResultItem } from "../context/GISContext";
+import type { FilterFormValues, ProductType } from "../schemas/filterSchema";
+import type {
+  AoiRing,
+  DemnasFootprintItem,
+  Footprint,
+  GeocodeResult,
+  PreviewData,
+  SearchResultItem,
+} from "../context/GISContext";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -40,6 +47,28 @@ export async function fetchSearch(
   const url = `${API_BASE_URL}/api/search?${params.toString()}`;
   const response = await fetch(url);
   return parseJsonOrThrow<SearchResult>(response);
+}
+
+export interface DemnasFootprintsResult {
+  items: DemnasFootprintItem[];
+  total: number;
+}
+
+/** Every matching DEMNAS tile's footprint, unpaginated - for the map's full
+ * coverage overlay. Ignores date range (DEMNAS has none) and cloud cover
+ * (not applicable). */
+export async function fetchDemnasFootprints(
+  productType: ProductType[],
+  aoiRing: AoiRing
+): Promise<DemnasFootprintsResult> {
+  const params = new URLSearchParams();
+  for (const type of productType) {
+    params.append("productType", type);
+  }
+  params.set("aoi", aoiRing.flat().join(","));
+  const url = `${API_BASE_URL}/api/search/demnas-footprints?${params.toString()}`;
+  const response = await fetch(url);
+  return parseJsonOrThrow<DemnasFootprintsResult>(response);
 }
 
 export async function fetchPreview(productId: string): Promise<PreviewData> {
@@ -234,6 +263,66 @@ export function getLandslideKmzUrl(id: string): string {
 // bounds = [south, west, north, east]
 export async function fetchLandslidePreview(id: string): Promise<{ bounds: [number, number, number, number] }> {
   const url = `${API_BASE_URL}/api/landslide/jobs/${encodeURIComponent(id)}/preview`;
+  const response = await fetch(url);
+  return parseJsonOrThrow<{ bounds: [number, number, number, number] }>(response);
+}
+
+export interface FloodJob {
+  id: string;
+  name: string;
+  satelliteId: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  progress: number;
+  message: string | null;
+  stage: string | null;
+  stageIndex: number;
+  totalStages: number;
+  thresholdSigma0: number;
+  hasResult: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function processFlood(
+  satelliteId: string,
+  aoi?: [number, number, number, number],
+): Promise<FloodJob> {
+  const url = `${API_BASE_URL}/api/flood/process`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ satelliteId, aoi }),
+  });
+  return parseJsonOrThrow<FloodJob>(response);
+}
+
+export async function fetchFloodJobs(): Promise<{ items: FloodJob[]; total: number }> {
+  const url = `${API_BASE_URL}/api/flood/jobs`;
+  const response = await fetch(url);
+  return parseJsonOrThrow<{ items: FloodJob[]; total: number }>(response);
+}
+
+export async function deleteFloodJob(id: string): Promise<{ success: boolean }> {
+  const url = `${API_BASE_URL}/api/flood/jobs/${encodeURIComponent(id)}`;
+  const response = await fetch(url, { method: "DELETE" });
+  return parseJsonOrThrow<{ success: boolean }>(response);
+}
+
+export function getFloodResultUrl(id: string): string {
+  return `${API_BASE_URL}/api/flood/jobs/${encodeURIComponent(id)}/result`;
+}
+
+export function getFloodPreviewImageUrl(id: string): string {
+  return `${API_BASE_URL}/api/flood/jobs/${encodeURIComponent(id)}/preview.png`;
+}
+
+export function getFloodKmzUrl(id: string): string {
+  return `${API_BASE_URL}/api/flood/jobs/${encodeURIComponent(id)}/kmz`;
+}
+
+// bounds = [south, west, north, east]
+export async function fetchFloodPreview(id: string): Promise<{ bounds: [number, number, number, number] }> {
+  const url = `${API_BASE_URL}/api/flood/jobs/${encodeURIComponent(id)}/preview`;
   const response = await fetch(url);
   return parseJsonOrThrow<{ bounds: [number, number, number, number] }>(response);
 }

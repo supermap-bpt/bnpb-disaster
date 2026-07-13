@@ -3,9 +3,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { CalendarIcon, ChevronDown, Cloud } from "lucide-react";
 import { format, parseISO } from "date-fns";
-import { filterSchema, type FilterFormValues } from "../schemas/filterSchema";
+import { filterSchema, isDemnasOnly, type FilterFormValues } from "../schemas/filterSchema";
 import { useGIS, INDONESIA_BBOX } from "../context/GISContext";
-import { fetchSearch } from "../api/client";
+import { fetchDemnasFootprints, fetchSearch } from "../api/client";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -20,6 +20,7 @@ const CALENDAR_END_MONTH = new Date(new Date().getFullYear() + 1, 11, 1);
 const SATELLITE_GROUPS = [
   {
     id: "sentinel-1",
+    family: "sentinel",
     label: "Sentinel-1",
     sensorId: "c-sar",
     sensorLabel: "C-SAR",
@@ -30,6 +31,7 @@ const SATELLITE_GROUPS = [
   },
   {
     id: "sentinel-2",
+    family: "sentinel",
     label: "Sentinel-2",
     sensorId: "msi",
     sensorLabel: "MSI",
@@ -40,6 +42,7 @@ const SATELLITE_GROUPS = [
   },
   {
     id: "sentinel-3",
+    family: "sentinel",
     label: "Sentinel-3",
     sensorId: "slstr",
     sensorLabel: "SLSTR",
@@ -48,9 +51,36 @@ const SATELLITE_GROUPS = [
       { value: "SENTINEL_3_SLSTR_L2_WST", label: "Level-2 WST" },
     ],
   },
+  {
+    id: "demnas",
+    family: "demnas",
+    label: "DEMNAS",
+    sensorId: "demnas-skala",
+    sensorLabel: "Skala",
+    leaves: [
+      { value: "DEMNAS_25K", label: "25K" },
+      { value: "DEMNAS_50K", label: "50K" },
+    ],
+  },
 ] as const;
 
 const ALL_LEAF_VALUES = SATELLITE_GROUPS.flatMap((group) => group.leaves.map((leaf) => leaf.value));
+
+const FAMILY_LEAF_VALUES: Record<string, string[]> = {
+  sentinel: SATELLITE_GROUPS.filter((g) => g.family === "sentinel").flatMap((g) =>
+    g.leaves.map((leaf) => leaf.value)
+  ),
+  demnas: SATELLITE_GROUPS.filter((g) => g.family === "demnas").flatMap((g) => g.leaves.map((leaf) => leaf.value)),
+};
+
+/** DEMNAS and Sentinel are mutually exclusive per search (different, incompatible
+ * pagination models on the backend) - checking a leaf/group from one family clears
+ * the other family's selections entirely. Only called when checking, never when
+ * unchecking. */
+function clearOtherFamily(updated: string[], checkedFamily: string): string[] {
+  const otherFamily = checkedFamily === "sentinel" ? "demnas" : "sentinel";
+  return updated.filter((v) => !FAMILY_LEAF_VALUES[otherFamily].includes(v));
+}
 
 export function DateField({
   id,
@@ -58,12 +88,14 @@ export function DateField({
   placeholder,
   value,
   onChange,
+  disabled,
 }: {
   id: string;
   label: string;
   placeholder: string;
   value: string;
   onChange: (value: string) => void;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -72,12 +104,13 @@ export function DateField({
       <label className="text-sm font-medium" htmlFor={id}>
         {label}
       </label>
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open && !disabled} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
             id={id}
             type="button"
             variant="outline"
+            disabled={disabled}
             className={cn("justify-start text-left font-normal", !value && "text-muted-foreground")}
           >
             <CalendarIcon className="mr-2 h-4 w-4" />
@@ -90,6 +123,7 @@ export function DateField({
             captionLayout="dropdown"
             startMonth={CALENDAR_START_MONTH}
             endMonth={CALENDAR_END_MONTH}
+            defaultMonth={value ? parseISO(value) : undefined}
             selected={value ? parseISO(value) : undefined}
             onSelect={(date) => {
               if (!date) return;
@@ -103,7 +137,7 @@ export function DateField({
   );
 }
 
-const DEFAULT_FORM_VALUES: FilterFormValues = { productType: ["SENTINEL_1_GRD"], cloudCoverMax: 100, dateFrom: "", dateUntil: "" };
+const DEFAULT_FORM_VALUES: FilterFormValues = { productType: [], cloudCoverMax: 100, dateFrom: "", dateUntil: "" };
 
 function TreeNode({
   id,
@@ -147,6 +181,7 @@ function FilterPanel() {
     addressQuery,
     setPlaceRing,
     setSearchResults,
+    setDemnasFootprints,
     setLastSearchFilter,
     isSearching,
     setIsSearching,
@@ -165,11 +200,12 @@ function FilterPanel() {
     defaultValues: DEFAULT_FORM_VALUES,
   });
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
-  const isGroupOpen = (id: string) => openGroups[id] ?? true;
+  const isGroupOpen = (id: string) => openGroups[id] ?? false;
   const toggleGroupOpen = (id: string) =>
     setOpenGroups((prev) => ({ ...prev, [id]: !isGroupOpen(id) }));
   const productTypeWatch = useWatch({ control, name: "productType" });
   const hasSentinel2Checked = (productTypeWatch ?? []).some((value) => value.startsWith("SENTINEL_2"));
+  const demnasOnly = isDemnasOnly(productTypeWatch ?? []);
 
   const onSubmit = async (values: FilterFormValues) => {
     const aoiRing = addressQuery.trim() === "" ? INDONESIA_BBOX : placeRing;
@@ -177,13 +213,31 @@ function FilterPanel() {
       setError(t("noAoiError"));
       return;
     }
+    // DEMNAS ignores the date range entirely (fixed historical baseline) - the
+    // backend still requires valid date query params structurally, so substitute
+    // a placeholder range rather than making the user pick dates that do nothing.
+    const submittedValues = demnasOnly
+      ? { ...values, dateFrom: "2000-01-01", dateUntil: format(new Date(), "yyyy-MM-dd") }
+      : values;
     setError(null);
     setIsSearching(true);
     try {
-      const { results, total } = await fetchSearch(values, aoiRing, 0);
+      const { results, total } = await fetchSearch(submittedValues, aoiRing, 0);
       setPlaceRing(aoiRing);
-      setLastSearchFilter(values);
+      // Store the submitted (fallback-substituted) values, not the raw form
+      // values - Sidebar's "Load More" reuses lastSearchFilter for pagination
+      // and would otherwise resend empty date strings on every subsequent page.
+      setLastSearchFilter(submittedValues);
       setSearchResults(results, total);
+      // DEMNAS's map coverage overlay draws every matching tile at once (the
+      // Sidebar list stays paginated above) - other data sources have no such
+      // overlay, so clear it whenever a non-DEMNAS search runs.
+      if (demnasOnly) {
+        const { items } = await fetchDemnasFootprints(submittedValues.productType, aoiRing);
+        setDemnasFootprints(items);
+      } else {
+        setDemnasFootprints([]);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : t("searchFailed"));
     } finally {
@@ -210,7 +264,8 @@ function FilterPanel() {
                 const setGroupAll = (checked: boolean | "indeterminate") => {
                   const current = field.value ?? [];
                   const withoutGroup = current.filter((v) => !leafValues.includes(v));
-                  field.onChange(checked === true ? [...withoutGroup, ...leafValues] : withoutGroup);
+                  const updated = checked === true ? [...withoutGroup, ...leafValues] : withoutGroup;
+                  field.onChange(checked === true ? clearOtherFamily(updated, group.family) : updated);
                 };
 
                 return (
@@ -243,37 +298,42 @@ function FilterPanel() {
                                 const updated = next
                                   ? [...current, value]
                                   : current.filter((item) => item !== value);
-                                field.onChange(ALL_LEAF_VALUES.filter((v) => updated.includes(v)));
+                                const cleaned = next ? clearOtherFamily(updated, group.family) : updated;
+                                field.onChange(ALL_LEAF_VALUES.filter((v) => cleaned.includes(v)));
                               }}
                             />
                             {label}
                           </label>
                         );
                       })}
+                      {group.id === "sentinel-2" && (
+                        <Controller
+                          control={control}
+                          name="cloudCoverMax"
+                          render={({ field: cloudField }) => (
+                            <div className="flex items-center gap-2 pt-1">
+                              <Cloud className="h-4 w-4 shrink-0 text-muted-foreground" />
+                              <Slider
+                                min={0}
+                                max={100}
+                                step={1}
+                                value={[cloudField.value]}
+                                onValueChange={([next]) => cloudField.onChange(next)}
+                                disabled={!hasSentinel2Checked}
+                                className="flex-1"
+                              />
+                              <span className="w-9 shrink-0 text-right text-xs text-muted-foreground">
+                                {cloudField.value}%
+                              </span>
+                            </div>
+                          )}
+                        />
+                      )}
                     </TreeNode>
                   </TreeNode>
                 );
               })}
             </>
-          )}
-        />
-        <Controller
-          control={control}
-          name="cloudCoverMax"
-          render={({ field }) => (
-            <div className="flex items-center gap-2 pl-5">
-              <Cloud className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <Slider
-                min={0}
-                max={100}
-                step={1}
-                value={[field.value]}
-                onValueChange={([next]) => field.onChange(next)}
-                disabled={!hasSentinel2Checked}
-                className="flex-1"
-              />
-              <span className="w-9 shrink-0 text-right text-xs text-muted-foreground">{field.value}%</span>
-            </div>
           )}
         />
       </fieldset>
@@ -292,6 +352,7 @@ function FilterPanel() {
               placeholder={t("pickDate")}
               value={field.value}
               onChange={field.onChange}
+              disabled={demnasOnly}
             />
           )}
         />
@@ -304,6 +365,7 @@ function FilterPanel() {
               label={t("dateUntil")}
               placeholder={t("pickDate")}
               value={field.value}
+              disabled={demnasOnly}
               onChange={field.onChange}
             />
           )}
@@ -332,6 +394,7 @@ function FilterPanel() {
         onClick={() => {
           resetAll();
           reset(DEFAULT_FORM_VALUES);
+          setOpenGroups({});
         }}
       >
         {t("resetMap")}

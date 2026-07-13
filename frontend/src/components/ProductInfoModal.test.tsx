@@ -101,6 +101,28 @@ describe("ProductInfoModal", () => {
     expect(screen.getByText("weird-value")).toBeInTheDocument();
   });
 
+  it("renders a DEMNAS tile's varying properties generically, same as any unmapped attribute", async () => {
+    vi.mocked(fetchProductAttributes).mockResolvedValue([
+      { name: "REGION", value: "SUMATERA" },
+      { name: "SENSOR", value: "TERRASAR X" },
+      { name: "SKALA", value: "25K" },
+    ]);
+
+    render(
+      <Providers>
+        <ProductInfoModal
+          item={{ ...SAMPLE_ITEM, productType: "DEMNAS_25K", id: "demnas-1" }}
+          open={true}
+          onOpenChange={() => {}}
+        />
+      </Providers>
+    );
+
+    expect(await screen.findByText("SUMATERA")).toBeInTheDocument();
+    expect(screen.getByText("TERRASAR X")).toBeInTheDocument();
+    expect(screen.getByText("25K")).toBeInTheDocument();
+  });
+
   it("shows an error message when the attributes request fails", async () => {
     vi.mocked(fetchProductAttributes).mockRejectedValue(new Error("No cached data for product p1."));
 
@@ -161,6 +183,26 @@ describe("ProductInfoModal", () => {
     expect(screen.getByRole("img")).toHaveAttribute(
       "src",
       "http://localhost:8000/api/preview-image/p2"
+    );
+  });
+
+  it("shows a thumbnail for Sentinel-3 SLSTR L2 LST items", async () => {
+    vi.mocked(fetchProductAttributes).mockResolvedValue([]);
+
+    render(
+      <Providers>
+        <ProductInfoModal
+          item={{ ...SAMPLE_ITEM, productType: "SENTINEL_3_SLSTR_L2_LST", id: "p3" }}
+          open={true}
+          onOpenChange={() => {}}
+        />
+      </Providers>
+    );
+
+    await waitFor(() => expect(fetchProductAttributes).toHaveBeenCalled());
+    expect(screen.getByRole("img")).toHaveAttribute(
+      "src",
+      "http://localhost:8000/api/preview-image/p3"
     );
   });
 });

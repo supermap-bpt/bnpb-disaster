@@ -54,3 +54,14 @@ def cache_attributes(product_id: str, attributes: list[dict]) -> None:
 
 def get_cached_attributes(product_id: str) -> list[dict] | None:
     return _ATTRIBUTES_CACHE.get(product_id)
+
+
+_QUICKLOOK_ASSET_ID_CACHE: dict[str, str] = {}
+
+
+def cache_quicklook_asset_id(product_id: str, asset_id: str) -> None:
+    _QUICKLOOK_ASSET_ID_CACHE[product_id] = asset_id
+
+
+def get_cached_quicklook_asset_id(product_id: str) -> str | None:
+    return _QUICKLOOK_ASSET_ID_CACHE.get(product_id)

@@ -1,15 +1,32 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import { LanguageProvider } from "@/context/LanguageContext";
 import SavedSatellitePage from "./SavedSatellitePage";
+
+type LatLng = { lat: number; lng: number };
+let mapEventHandlers: Record<string, (event: { latlng: LatLng }) => void> = {};
 
 vi.mock("react-leaflet", () => ({
   MapContainer: ({ children }: { children: ReactNode }) => <div data-testid="map-container">{children}</div>,
   TileLayer: () => <div data-testid="tile-layer" />,
   GeoJSON: () => <div data-testid="geojson" />,
   ZoomControl: () => <div data-testid="zoom-control" />,
-  useMap: () => ({ fitBounds: vi.fn(), attributionControl: { setPrefix: vi.fn() } }),
+  useMap: () => ({
+    fitBounds: vi.fn(),
+    attributionControl: { setPrefix: vi.fn() },
+    dragging: { enable: vi.fn(), disable: vi.fn() },
+  }),
+  useMapEvents: (handlers: Record<string, (event: { latlng: LatLng }) => void>) => {
+    mapEventHandlers = handlers;
+    return {
+      fitBounds: vi.fn(),
+      attributionControl: { setPrefix: vi.fn() },
+      dragging: { enable: vi.fn(), disable: vi.fn() },
+    };
+  },
+  Rectangle: () => <div data-testid="rectangle" />,
+  Marker: () => <div data-testid="marker" />,
 }));
 
 vi.mock("@/api/client", () => ({
@@ -17,6 +34,7 @@ vi.mock("@/api/client", () => ({
   fetchSavedSatelliteDetail: vi.fn(),
   deleteSavedSatellite: vi.fn(),
   retryFileDownload: vi.fn(),
+  processLandslide: vi.fn(),
   getSavedSatelliteThumbnailUrl: (path: string) => `http://localhost:8000/${path}`,
   getSavedSatelliteDownloadFileUrl: (id: string) => `http://localhost:8000/api/satellites/${id}/download-file`,
 }));
@@ -25,6 +43,7 @@ import {
   deleteSavedSatellite,
   fetchSavedSatelliteDetail,
   fetchSavedSatellites,
+  processLandslide,
   retryFileDownload,
 } from "@/api/client";
 
@@ -47,6 +66,7 @@ const SAMPLE_ITEM = {
 
 const DOWNLOADING_ITEM = { ...SAMPLE_ITEM, id: "sat-2", fileStatus: "downloading" as const };
 const FAILED_ITEM = { ...SAMPLE_ITEM, id: "sat-3", fileStatus: "failed" as const };
+const SAMPLE_ITEM_2 = { ...SAMPLE_ITEM, id: "sat-4", satelliteName: "Aceh Flood Feb 2025" };
 
 const SAMPLE_DETAIL = {
   ...SAMPLE_ITEM,
@@ -68,6 +88,8 @@ beforeEach(() => {
   vi.mocked(fetchSavedSatelliteDetail).mockReset();
   vi.mocked(deleteSavedSatellite).mockReset();
   vi.mocked(retryFileDownload).mockReset();
+  vi.mocked(processLandslide).mockReset();
+  mapEventHandlers = {};
   vi.stubGlobal("confirm", vi.fn(() => true));
 });
 
@@ -291,5 +313,76 @@ describe("SavedSatellitePage", () => {
     await waitFor(() => expect(screen.queryByTestId("geojson")).not.toBeInTheDocument());
     expect(await screen.findByRole("button", { name: /view on map/i })).toBeInTheDocument();
     expect(fetchSavedSatelliteDetail).toHaveBeenCalledTimes(1);
+  });
+
+  describe("Landslide AOI bounding box", () => {
+    async function renderWithTwoReadyProducts() {
+      vi.mocked(fetchSavedSatellites).mockResolvedValue({
+        items: [SAMPLE_ITEM, SAMPLE_ITEM_2],
+        total: 2,
+        page: 1,
+        pageSize: 10,
+      });
+
+      render(
+        <Providers>
+          <SavedSatellitePage />
+        </Providers>
+      );
+
+      await screen.findByText("Aceh Flood Jan 2025");
+      const selectButtons = screen.getAllByRole("button", { name: /^pilih$/i });
+      fireEvent.click(selectButtons[0]);
+      fireEvent.click(selectButtons[1]);
+    }
+
+    it("shows the slow-full-scene confirmation when Process Landslide is clicked with no bbox drawn", async () => {
+      vi.stubGlobal("confirm", vi.fn(() => false));
+      await renderWithTwoReadyProducts();
+
+      fireEvent.click(screen.getByRole("button", { name: /proses longsor/i }));
+
+      expect(window.confirm).toHaveBeenCalled();
+      expect(processLandslide).not.toHaveBeenCalled();
+    });
+
+    it("does not show the confirmation and processes directly when a bbox has been drawn", async () => {
+      vi.mocked(processLandslide).mockResolvedValue({
+        id: "job-1",
+        name: "Landslide: Aceh Flood Jan 2025 -> Aceh Flood Feb 2025",
+        preSatelliteId: "sat-1",
+        postSatelliteId: "sat-4",
+        status: "pending",
+        progress: 0,
+        message: null,
+        stage: null,
+        stageIndex: 0,
+        totalStages: 7,
+        thresholdDb: -2,
+        hasResult: false,
+        createdAt: "2025-01-26T12:00:00Z",
+        updatedAt: "2025-01-26T12:00:00Z",
+      });
+      await renderWithTwoReadyProducts();
+
+      // Arm the draw tool, then simulate a real click-drag via the captured
+      // useMapEvents handlers - this exercises the real MapBboxDrawTool ->
+      // real SavedSatelliteMap -> real SavedSatellitePage bbox state wiring.
+      fireEvent.click(screen.getByTestId("bbox-draw-button"));
+      act(() => mapEventHandlers.mousedown({ latlng: { lat: 4.0, lng: 97.5 } }));
+      act(() => mapEventHandlers.mouseup({ latlng: { lat: 5.0, lng: 98.3 } }));
+
+      fireEvent.click(screen.getByRole("button", { name: /proses longsor/i }));
+
+      await waitFor(() => expect(processLandslide).toHaveBeenCalled());
+      expect(window.confirm).not.toHaveBeenCalled();
+      expect(processLandslide).toHaveBeenCalledWith("sat-1", "sat-4", [97.5, 4.0, 98.3, 5.0]);
+    });
+
+    it("no longer renders a manual AOI text input", async () => {
+      await renderWithTwoReadyProducts();
+
+      expect(screen.queryByPlaceholderText(/minLon/i)).not.toBeInTheDocument();
+    });
   });
 });

@@ -7,7 +7,8 @@ from app.models import PreviewResponse
 from app.routers.search import _get_token_manager
 from app.services.cache import get_cached_product_type
 from app.services.preview import get_preview
-from app.services.render import render_product_image
+from app.services.quicklook import fetch_quicklook_image, has_quicklook, unsupported_preview_message
+from app.services.render import is_renderable, render_product_image
 
 router = APIRouter()
 
@@ -53,10 +54,14 @@ async def preview_image(
             detail=f"No cached data for product {productId}. Run a search first.",
         )
     try:
-        image_bytes = await render_product_image(productId, product_type, settings, token_manager)
+        if is_renderable(product_type):
+            image_bytes = await render_product_image(productId, product_type, settings, token_manager)
+            return Response(content=image_bytes, media_type="image/png")
+        if has_quicklook(product_type):
+            image_bytes = await fetch_quicklook_image(productId, settings, token_manager)
+            return Response(content=image_bytes, media_type="image/jpeg")
+        raise ValueError(unsupported_preview_message(product_type))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except httpx.HTTPStatusError as exc:
         raise HTTPException(status_code=502, detail="Render upstream error") from exc
-
-    return Response(content=image_bytes, media_type="image/png")

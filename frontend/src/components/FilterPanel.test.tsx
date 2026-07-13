@@ -78,12 +78,18 @@ function ResultsProbe() {
   return <span data-testid="result-count">{gis.searchResults.length}</span>;
 }
 
+/** All tree groups start collapsed; expand the named group's chevron
+ * (aria-label "Expand <name>") before a test needs to see/click its leaves. */
+function expandGroup(name: RegExp) {
+  fireEvent.click(screen.getByRole("button", { name }));
+}
+
 beforeEach(() => {
   vi.mocked(fetchSearch).mockReset();
 });
 
 describe("FilterPanel", () => {
-  it("defaults to GRD checked, and submits filter + placeRing + skip=0", async () => {
+  it("defaults to nothing checked, and submits filter + placeRing + skip=0 once a leaf is picked", async () => {
     vi.mocked(fetchSearch).mockResolvedValue({
       results: [
         {
@@ -110,9 +116,14 @@ describe("FilterPanel", () => {
       </Providers>
     );
 
-    expect(screen.getByLabelText(/level 1-grd/i)).toBeChecked();
+    expect(screen.getByLabelText(/^sentinel-1$/i)).toHaveAttribute("data-state", "unchecked");
+
+    expandGroup(/expand sentinel-1/i);
+    expandGroup(/expand c-sar/i);
+    expect(screen.getByLabelText(/level 1-grd/i)).not.toBeChecked();
     expect(screen.getByLabelText(/level 1-slc/i)).not.toBeChecked();
 
+    fireEvent.click(screen.getByLabelText(/level 1-grd/i));
     pickDate(/^dari$/i, 2026, 0, 1);
     pickDate(/^sampai$/i, 2026, 1, 1);
     fireEvent.click(screen.getByRole("button", { name: /^cari$/i }));
@@ -138,7 +149,10 @@ describe("FilterPanel", () => {
       </Providers>
     );
 
+    expandGroup(/expand sentinel-1/i);
+    expandGroup(/expand c-sar/i);
     fireEvent.click(screen.getByLabelText(/level 1-slc/i));
+    fireEvent.click(screen.getByLabelText(/level 1-grd/i));
     pickDate(/^dari$/i, 2026, 0, 1);
     pickDate(/^sampai$/i, 2026, 1, 1);
     fireEvent.click(screen.getByRole("button", { name: /^cari$/i }));
@@ -160,9 +174,11 @@ describe("FilterPanel", () => {
       </Providers>
     );
 
-    expect(screen.getByLabelText(/^sentinel-1$/i)).toHaveAttribute("data-state", "indeterminate");
-    expect(screen.getByLabelText(/^c-sar$/i)).toHaveAttribute("data-state", "indeterminate");
+    expect(screen.getByLabelText(/^sentinel-1$/i)).toHaveAttribute("data-state", "unchecked");
 
+    expandGroup(/expand sentinel-1/i);
+    expect(screen.getByLabelText(/^c-sar$/i)).toHaveAttribute("data-state", "unchecked");
+    expandGroup(/expand c-sar/i);
     fireEvent.click(screen.getByLabelText(/^sentinel-1$/i));
     expect(screen.getByLabelText(/level 1-slc/i)).toBeChecked();
     expect(screen.getByLabelText(/level 1-grd/i)).toBeChecked();
@@ -183,13 +199,15 @@ describe("FilterPanel", () => {
       </Providers>
     );
 
+    expandGroup(/expand sentinel-1/i);
+    expandGroup(/expand c-sar/i);
     fireEvent.click(screen.getByLabelText(/level 1-grd/i));
     fireEvent.click(screen.getByLabelText(/^c-sar$/i));
     expect(screen.getByLabelText(/level 1-slc/i)).toBeChecked();
     expect(screen.getByLabelText(/level 1-grd/i)).toBeChecked();
   });
 
-  it("collapses and expands the C-SAR group", async () => {
+  it("groups start collapsed; expanding Sentinel-1 then C-SAR reveals its leaves", async () => {
     render(
       <Providers>
         <WithPlace ring={SAMPLE_PLACE}>
@@ -198,6 +216,11 @@ describe("FilterPanel", () => {
       </Providers>
     );
 
+    expect(screen.queryByLabelText(/level 1-slc/i)).not.toBeInTheDocument();
+    expandGroup(/expand sentinel-1/i);
+    expect(screen.queryByLabelText(/level 1-slc/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /expand c-sar/i }));
     expect(screen.getByLabelText(/level 1-slc/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /collapse c-sar/i }));
     expect(screen.queryByLabelText(/level 1-slc/i)).not.toBeInTheDocument();
@@ -214,12 +237,13 @@ describe("FilterPanel", () => {
       </Providers>
     );
 
+    expandGroup(/expand sentinel-2/i);
+    expandGroup(/expand msi/i);
     fireEvent.click(screen.getByLabelText(/^sentinel-2$/i));
     expect(screen.getByLabelText(/^l1c$/i)).toBeChecked();
     expect(screen.getByLabelText(/^l2a$/i)).toBeChecked();
-    // Default S1 state (GRD checked, SLC not) must be untouched.
-    expect(screen.getByLabelText(/level 1-grd/i)).toBeChecked();
-    expect(screen.getByLabelText(/level 1-slc/i)).not.toBeChecked();
+    // Default S1 state (nothing checked) must be untouched.
+    expect(screen.getByLabelText(/^sentinel-1$/i)).toHaveAttribute("data-state", "unchecked");
   });
 
   it("checking Sentinel-3 checks both SLSTR leaves without touching Sentinel-1 or Sentinel-2", async () => {
@@ -231,14 +255,14 @@ describe("FilterPanel", () => {
       </Providers>
     );
 
+    expandGroup(/expand sentinel-3/i);
+    expandGroup(/expand slstr/i);
     fireEvent.click(screen.getByLabelText(/^sentinel-3$/i));
     expect(screen.getByLabelText(/level-2 lst/i)).toBeChecked();
     expect(screen.getByLabelText(/level-2 wst/i)).toBeChecked();
-    // Default S1 state (GRD checked, SLC not) and S2 (both unchecked) must be untouched.
-    expect(screen.getByLabelText(/level 1-grd/i)).toBeChecked();
-    expect(screen.getByLabelText(/level 1-slc/i)).not.toBeChecked();
-    expect(screen.getByLabelText(/^l1c$/i)).not.toBeChecked();
-    expect(screen.getByLabelText(/^l2a$/i)).not.toBeChecked();
+    // Default S1/S2 state (nothing checked) must be untouched.
+    expect(screen.getByLabelText(/^sentinel-1$/i)).toHaveAttribute("data-state", "unchecked");
+    expect(screen.getByLabelText(/^sentinel-2$/i)).toHaveAttribute("data-state", "unchecked");
   });
 
   it("submits Sentinel-3 product types when their checkboxes are checked", async () => {
@@ -254,6 +278,8 @@ describe("FilterPanel", () => {
       </Providers>
     );
 
+    expandGroup(/expand sentinel-3/i);
+    expandGroup(/expand slstr/i);
     fireEvent.click(screen.getByLabelText(/level-2 lst/i));
     pickDate(/^dari$/i, 2026, 0, 1);
     pickDate(/^sampai$/i, 2026, 1, 1);
@@ -262,7 +288,7 @@ describe("FilterPanel", () => {
     await waitFor(() => expect(fetchSearch).toHaveBeenCalled());
     expect(fetchSearch).toHaveBeenCalledWith(
       {
-        productType: ["SENTINEL_1_GRD", "SENTINEL_3_SLSTR_L2_LST"],
+        productType: ["SENTINEL_3_SLSTR_L2_LST"],
         cloudCoverMax: 100,
         dateFrom: "2026-01-01",
         dateUntil: "2026-02-01",
@@ -270,6 +296,139 @@ describe("FilterPanel", () => {
       SAMPLE_PLACE,
       0
     );
+  });
+
+  it("checking a DEMNAS leaf clears any checked Sentinel leaves", async () => {
+    render(
+      <Providers>
+        <WithPlace ring={SAMPLE_PLACE}>
+          <FilterPanel />
+        </WithPlace>
+      </Providers>
+    );
+
+    expandGroup(/expand sentinel-1/i);
+    expandGroup(/expand c-sar/i);
+    fireEvent.click(screen.getByLabelText(/level 1-grd/i));
+    expect(screen.getByLabelText(/level 1-grd/i)).toBeChecked();
+
+    expandGroup(/expand demnas/i);
+    expandGroup(/expand skala/i);
+    fireEvent.click(screen.getByLabelText(/^25k$/i));
+
+    expect(screen.getByLabelText(/^25k$/i)).toBeChecked();
+    expect(screen.getByLabelText(/level 1-grd/i)).not.toBeChecked();
+  });
+
+  it("checking a Sentinel leaf clears any checked DEMNAS leaves", async () => {
+    render(
+      <Providers>
+        <WithPlace ring={SAMPLE_PLACE}>
+          <FilterPanel />
+        </WithPlace>
+      </Providers>
+    );
+
+    expandGroup(/expand demnas/i);
+    expandGroup(/expand skala/i);
+    fireEvent.click(screen.getByLabelText(/^25k$/i));
+    expect(screen.getByLabelText(/^25k$/i)).toBeChecked();
+
+    expandGroup(/expand sentinel-1/i);
+    expandGroup(/expand c-sar/i);
+    fireEvent.click(screen.getByLabelText(/level 1-grd/i));
+
+    expect(screen.getByLabelText(/level 1-grd/i)).toBeChecked();
+    expect(screen.getByLabelText(/^25k$/i)).not.toBeChecked();
+  });
+
+  it("checking the DEMNAS group checks both Skala leaves and clears Sentinel selections", async () => {
+    render(
+      <Providers>
+        <WithPlace ring={SAMPLE_PLACE}>
+          <FilterPanel />
+        </WithPlace>
+      </Providers>
+    );
+
+    expandGroup(/expand sentinel-1/i);
+    expandGroup(/expand c-sar/i);
+    fireEvent.click(screen.getByLabelText(/level 1-grd/i));
+
+    expandGroup(/expand demnas/i);
+    expandGroup(/expand skala/i);
+    fireEvent.click(screen.getByLabelText(/^demnas$/i));
+
+    expect(screen.getByLabelText(/^25k$/i)).toBeChecked();
+    expect(screen.getByLabelText(/^50k$/i)).toBeChecked();
+    expect(screen.getByLabelText(/level 1-grd/i)).not.toBeChecked();
+  });
+
+  it("submits DEMNAS product types without requiring a date range", async () => {
+    vi.mocked(fetchSearch).mockResolvedValue({ results: [], total: 0 });
+
+    render(
+      <Providers>
+        <WithPlace ring={SAMPLE_PLACE}>
+          <WithAddressQuery query="Somewhere, Indonesia">
+            <FilterPanel />
+          </WithAddressQuery>
+        </WithPlace>
+      </Providers>
+    );
+
+    expandGroup(/expand demnas/i);
+    expandGroup(/expand skala/i);
+    fireEvent.click(screen.getByLabelText(/^25k$/i));
+    fireEvent.click(screen.getByRole("button", { name: /^cari$/i }));
+
+    await waitFor(() => expect(fetchSearch).toHaveBeenCalled());
+    expect(fetchSearch).toHaveBeenCalledWith(
+      expect.objectContaining({ productType: ["DEMNAS_25K"], cloudCoverMax: 100 }),
+      SAMPLE_PLACE,
+      0
+    );
+  });
+
+  it("disables the date pickers and shows no validation error when DEMNAS is the only selection", async () => {
+    render(
+      <Providers>
+        <WithPlace ring={SAMPLE_PLACE}>
+          <FilterPanel />
+        </WithPlace>
+      </Providers>
+    );
+
+    expandGroup(/expand demnas/i);
+    expandGroup(/expand skala/i);
+    fireEvent.click(screen.getByLabelText(/^25k$/i));
+
+    expect(screen.getByLabelText(/^dari$/i)).toBeDisabled();
+    expect(screen.getByLabelText(/^sampai$/i)).toBeDisabled();
+  });
+
+  it("re-enables the date pickers and requires them again once a Sentinel leaf is checked instead", async () => {
+    render(
+      <Providers>
+        <WithPlace ring={SAMPLE_PLACE}>
+          <FilterPanel />
+        </WithPlace>
+      </Providers>
+    );
+
+    expandGroup(/expand demnas/i);
+    expandGroup(/expand skala/i);
+    fireEvent.click(screen.getByLabelText(/^25k$/i));
+    expect(screen.getByLabelText(/^dari$/i)).toBeDisabled();
+
+    expandGroup(/expand sentinel-1/i);
+    expandGroup(/expand c-sar/i);
+    fireEvent.click(screen.getByLabelText(/level 1-grd/i));
+
+    expect(screen.getByLabelText(/^dari$/i)).not.toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /^cari$/i }));
+
+    expect(await screen.findAllByText(/wajib diisi/i)).toHaveLength(2);
   });
 
   it("cloud cover slider is disabled until a Sentinel-2 leaf is checked", async () => {
@@ -281,6 +440,8 @@ describe("FilterPanel", () => {
       </Providers>
     );
 
+    expandGroup(/expand sentinel-2/i);
+    expandGroup(/expand msi/i);
     expect(screen.getByRole("slider")).toHaveAttribute("data-disabled");
     fireEvent.click(screen.getByLabelText(/^l2a$/i));
     expect(screen.getByRole("slider")).not.toHaveAttribute("data-disabled");
@@ -299,6 +460,8 @@ describe("FilterPanel", () => {
       </Providers>
     );
 
+    expandGroup(/expand sentinel-2/i);
+    expandGroup(/expand msi/i);
     fireEvent.click(screen.getByLabelText(/^l2a$/i));
     pickDate(/^dari$/i, 2026, 0, 1);
     pickDate(/^sampai$/i, 2026, 1, 1);
@@ -324,7 +487,6 @@ describe("FilterPanel", () => {
       </Providers>
     );
 
-    fireEvent.click(screen.getByLabelText(/level 1-grd/i));
     pickDate(/^dari$/i, 2026, 0, 1);
     pickDate(/^sampai$/i, 2026, 1, 1);
     fireEvent.click(screen.getByRole("button", { name: /^cari$/i }));
@@ -361,6 +523,9 @@ describe("FilterPanel", () => {
       </Providers>
     );
 
+    expandGroup(/expand sentinel-1/i);
+    expandGroup(/expand c-sar/i);
+    fireEvent.click(screen.getByLabelText(/level 1-grd/i));
     pickDate(/^dari$/i, 2026, 0, 1);
     pickDate(/^sampai$/i, 2026, 1, 1);
     fireEvent.click(screen.getByRole("button", { name: /^cari$/i }));
@@ -381,6 +546,9 @@ describe("FilterPanel", () => {
       </Providers>
     );
 
+    expandGroup(/expand sentinel-1/i);
+    expandGroup(/expand c-sar/i);
+    fireEvent.click(screen.getByLabelText(/level 1-grd/i));
     pickDate(/^dari$/i, 2026, 0, 1);
     pickDate(/^sampai$/i, 2026, 1, 1);
     fireEvent.click(screen.getByRole("button", { name: /^cari$/i }));

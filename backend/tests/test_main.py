@@ -22,6 +22,7 @@ def test_openapi_schema_has_expected_tags(client):
         "Attributes",
         "Satellites",
         "Landslide",
+        "Flood",
         "Logs",
     }
 

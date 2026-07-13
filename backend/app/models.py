@@ -11,6 +11,8 @@ class ProductType(str, Enum):
     S2_L2A = "SENTINEL_2_L2A"
     S3_SLSTR_L2_LST = "SENTINEL_3_SLSTR_L2_LST"
     S3_SLSTR_L2_WST = "SENTINEL_3_SLSTR_L2_WST"
+    DEMNAS_25K = "DEMNAS_25K"
+    DEMNAS_50K = "DEMNAS_50K"
 
 
 class SearchQuery(BaseModel):
@@ -42,7 +44,10 @@ class SearchQuery(BaseModel):
 
 class Footprint(BaseModel):
     type: str = Field(default="Polygon")
-    coordinates: list[list[list[float]]]
+    # Polygon: [ring]. MultiPolygon: [[ring], [ring], ...] - CDSE returns
+    # MULTIPOLYGON for footprints crossing the antimeridian (observed for
+    # Sentinel-3 WST's near-global, near-polar swaths).
+    coordinates: list[list[list[float]]] | list[list[list[list[float]]]]
 
 
 class SearchResultItem(BaseModel):
@@ -68,6 +73,21 @@ class ProductAttributesResponse(BaseModel):
 class SearchResponse(BaseModel):
     results: list[SearchResultItem]
     total: int = Field(..., description="Total matching products at CDSE, which may exceed len(results).")
+
+
+class DemnasFootprintItem(BaseModel):
+    id: str
+    productType: ProductType
+    footprint: Footprint
+
+
+class DemnasFootprintsResponse(BaseModel):
+    # Deliberately lean - id/productType/footprint only, no name/sensingTime/
+    # size/etc. - since this endpoint returns every matching DEMNAS tile
+    # unpaginated (thousands, for the map's full-coverage overlay) rather
+    # than the paginated, fully-detailed SearchResultItem list /api/search returns.
+    items: list[DemnasFootprintItem]
+    total: int
 
 
 class GeocodeResponse(BaseModel):
@@ -216,6 +236,45 @@ class LandslideJobResponse(BaseModel):
 
 class LandslideJobsListResponse(BaseModel):
     items: list[LandslideJobResponse]
+    total: int
+
+
+class ProcessFloodRequest(BaseModel):
+    satelliteId: str = Field(..., description="Saved satellite id of the product to process.")
+    aoi: list[float] | None = Field(
+        default=None,
+        description="Optional crop bbox [minLon, minLat, maxLon, maxLat] to speed up processing.",
+    )
+
+    @model_validator(mode="after")
+    def check_request(self) -> "ProcessFloodRequest":
+        if self.aoi is not None:
+            if len(self.aoi) != 4:
+                raise ValueError("aoi must be [minLon, minLat, maxLon, maxLat]")
+            min_lon, min_lat, max_lon, max_lat = self.aoi
+            if min_lon >= max_lon or min_lat >= max_lat:
+                raise ValueError("aoi min must be less than max for both lon and lat")
+        return self
+
+
+class FloodJobResponse(BaseModel):
+    id: str
+    name: str
+    satelliteId: str
+    status: str
+    progress: int
+    message: str | None = None
+    stage: str | None = None
+    stageIndex: int
+    totalStages: int
+    thresholdSigma0: float
+    hasResult: bool
+    createdAt: datetime
+    updatedAt: datetime
+
+
+class FloodJobsListResponse(BaseModel):
+    items: list[FloodJobResponse]
     total: int
 
 

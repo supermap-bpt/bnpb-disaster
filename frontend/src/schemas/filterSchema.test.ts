@@ -87,4 +87,22 @@ describe("filterSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("accepts an empty date range when only DEMNAS product types are selected", () => {
+    const result = filterSchema.safeParse({
+      productType: ["DEMNAS_25K"],
+      dateFrom: "",
+      dateUntil: "",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("still requires a date range when a non-DEMNAS product type is present", () => {
+    const result = filterSchema.safeParse({
+      productType: ["DEMNAS_25K", "SENTINEL_1_GRD"],
+      dateFrom: "",
+      dateUntil: "",
+    });
+    expect(result.success).toBe(false);
+  });
 });

@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     # endpoint does not accept (root cause of the old broken Preview).
     cdse_process_url: str = "https://sh.dataspace.copernicus.eu/api/v1/process"
     nominatim_url: str = "https://nominatim.openstreetmap.org/search"
+    demnas_url: str = "https://tanahair.indonesia.go.id/portal-web/demnas.json"
     # Plain str, not list[str]: pydantic-settings tries json.loads() on any
     # list-typed env var before validators run, and .env stores this as a
     # plain comma-separated string (CORS_ORIGINS=http://localhost:5173,...).
@@ -39,6 +40,8 @@ class Settings(BaseSettings):
     # water / radar shadow / smooth surfaces and excluded from the landslide mask.
     # Land/vegetation VV is typically > -15 dB; open water is < -20 dB.
     landslide_water_threshold_db: float = -17.0
+    # Sigma0 (linear, not dB) cutoff for the flood binary mask, per the reference PDF.
+    flood_threshold_sigma0: float = 0.0137
 
     @property
     def cors_origins(self) -> list[str]:
